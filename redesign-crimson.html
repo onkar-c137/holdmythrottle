@@ -1,0 +1,3357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Hold My Throttle — Electronic Cruise Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+
+/* ─── TOKENS ─────────────────────────────────── */
+:root{
+  --bg:#f9f8f4; --bg2:#ffffff; --s0:#f0efe9; --s1:#e6e5de;
+  --b0:rgba(10,10,18,.07); --b1:rgba(10,10,18,.14);
+  --cyan:#e10600; --cg:rgba(225,6,0,.07);
+  --orange:#e10600; --og:rgba(225,6,0,.08);
+  --green:#008040; --gg:rgba(0,128,64,.08);
+  --red:#cc2020;   --rg:rgba(204,32,32,.08);
+  --amber:#e88000;
+  --t0:#0a0a12; --t1:#505068; --t2:#9090a8;
+  --f-d:'Bebas Neue',sans-serif;
+  --f-b:'DM Sans',sans-serif;
+  --f-m:'Space Mono',monospace;
+}
+
+/* Dark overrides inside the night-road panel */
+#road-panel{
+  --cyan:#00d8f5; --cg:rgba(0,216,245,.13);
+  --green:#00f07a; --gg:rgba(0,240,122,.11);
+  --red:#ff2244;   --rg:rgba(255,34,68,.1);
+  --t0:#f2f2fc; --t1:#7c7ca0; --t2:#3c3c5a;
+  --b0:#1e1e30; --b1:#2c2c48; --s0:#101018;
+  --og:rgba(225,6,0,.12);
+}
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--t0);
+  font-family:var(--f-b);line-height:1.6;overflow-x:hidden;
+}
+
+/* subtle 64px grid */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(rgba(10,10,18,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(10,10,18,.03) 1px,transparent 1px);
+  background-size:64px 64px;
+}
+section,nav,footer{position:relative;z-index:1}
+
+/* ─── UTILS ─────────────────────────────────── */
+.c{max-width:1140px;margin:0 auto;padding:0 28px}
+
+.tag{display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--f-m);font-size:10px;letter-spacing:.3em;
+  color:var(--orange);text-transform:uppercase}
+.tag::before{content:'//';opacity:.4}
+
+.rv{opacity:0;transform:translateY(22px);
+  transition:opacity .6s ease,transform .6s ease}
+.rv.up{opacity:1;transform:none}
+.rv.d1{transition-delay:.08s}.rv.d2{transition-delay:.16s}
+.rv.d3{transition-delay:.24s}.rv.d4{transition-delay:.32s}
+
+/* Road dash animation */
+@keyframes rdash{from{stroke-dashoffset:0}to{stroke-dashoffset:-52}}
+@keyframes rectdash{from{transform:translateY(0)}to{transform:translateY(52px)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes pdot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
+@keyframes rpulse{0%,100%{box-shadow:0 0 0 rgba(0,240,122,0)}50%{box-shadow:0 0 20px rgba(0,240,122,.28)}}
+@keyframes rvShake{
+  0%,100%{transform:translate(0,0) rotate(0)}
+  10%{transform:translate(-2px,1px) rotate(-.3deg)}
+  20%{transform:translate(2px,-1px) rotate(.2deg)}
+  30%{transform:translate(-1px,2px) rotate(-.2deg)}
+  40%{transform:translate(1px,-2px) rotate(.3deg)}
+  50%{transform:translate(-2px,1px) rotate(-.1deg)}
+  60%{transform:translate(2px,1px) rotate(.2deg)}
+  70%{transform:translate(-1px,-1px) rotate(-.3deg)}
+  80%{transform:translate(1px,2px) rotate(.1deg)}
+  90%{transform:translate(-2px,-1px) rotate(.2deg)}
+}
+@keyframes rvShakeHard{
+  0%,100%{transform:translate(0,0) rotate(0)}
+  10%{transform:translate(-4px,2px) rotate(-.5deg)}
+  20%{transform:translate(3px,-3px) rotate(.4deg)}
+  30%{transform:translate(-3px,3px) rotate(-.4deg)}
+  40%{transform:translate(4px,-2px) rotate(.5deg)}
+  50%{transform:translate(-3px,2px) rotate(-.3deg)}
+  60%{transform:translate(3px,2px) rotate(.4deg)}
+  70%{transform:translate(-2px,-3px) rotate(-.5deg)}
+  80%{transform:translate(2px,3px) rotate(.3deg)}
+  90%{transform:translate(-4px,-2px) rotate(.4deg)}
+}
+
+/* ─── BUTTONS ───────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:9px;
+  font-family:var(--f-b);font-weight:600;font-size:14px;
+  letter-spacing:.04em;text-decoration:none;border:none;
+  cursor:pointer;transition:all .2s;padding:13px 28px;
+}
+.btn-fill{background:var(--orange);color:#fff}
+.btn-fill:hover{background:#b30500;box-shadow:0 4px 24px rgba(225,6,0,.3)}
+.btn-ghost{background:transparent;color:var(--t1);border:1px solid rgba(10,10,18,.2)}
+.btn-ghost:hover{color:var(--t0);border-color:var(--t0)}
+.btn-sm{padding:8px 16px;font-size:12px;letter-spacing:.06em}
+
+/* ─── NAV ───────────────────────────────────── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:300;
+  height:56px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;
+  background:rgba(249,248,244,.92);backdrop-filter:blur(22px);
+  border-bottom:1px solid var(--b0);transition:border-color .3s,background .3s;
+}
+.nav-logo{
+  display:flex;align-items:center;
+  text-decoration:none;flex-shrink:0;
+}
+.nav-logo img{
+  height:30px;width:auto;display:block;
+  filter:invert(1); /* white logo → black on light bg */
+}
+@media(max-width:768px){.nav-logo img{height:24px}}
+.nav-links{display:flex;gap:28px;list-style:none}
+.nav-links a{font-size:13px;color:var(--t1);text-decoration:none;transition:color .2s}
+.nav-links a:hover{color:var(--t0)}
+.nav-cta{
+  padding:7px 18px;background:var(--orange);border:none;
+  color:#fff;font-family:var(--f-b);font-weight:600;font-size:12px;
+  letter-spacing:.06em;text-decoration:none;transition:background .2s;
+}
+.nav-cta:hover{background:#e83a00}
+.nav-mob{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:6px}
+.nav-mob span{width:20px;height:1.5px;background:var(--t0)}
+
+/* ─── HERO ──────────────────────────────────── */
+#hero{
+  min-height:100vh;display:flex;flex-direction:column;
+  justify-content:flex-end;position:relative;overflow:hidden;
+  padding-top:56px;
+}
+
+/* Left-column cream wash — ensures text always readable over the road zone */
+#hero::after{
+  content:'';position:absolute;
+  top:0;left:0;bottom:0;
+  width:58%;
+  background:linear-gradient(to right,
+    rgba(249,248,244,1) 0%,
+    rgba(249,248,244,1) 55%,
+    rgba(249,248,244,.7) 75%,
+    transparent 100%);
+  pointer-events:none;z-index:1;
+}
+
+/* Road SVG fills bottom 52% of hero */
+.road-scene{
+  position:absolute;bottom:0;left:0;right:0;
+  height:52%;pointer-events:none;
+}
+.road-scene svg{width:100%;height:100%;display:block}
+
+/* Ambient glow at horizon */
+.horizon-glow{
+  position:absolute;
+  left:50%;bottom:52%;
+  transform:translate(-50%,50%);
+  width:min(600px,80vw);height:60px;
+  background:radial-gradient(ellipse,rgba(255,68,0,.14) 0%,transparent 70%);
+  pointer-events:none;filter:blur(12px);
+}
+
+/* Speed streak lines on sides */
+.streak{
+  position:absolute;top:0;bottom:52%;
+  width:1px;background:linear-gradient(to bottom,transparent,rgba(10,10,18,.06),transparent);
+  pointer-events:none;
+}
+.streak-l{left:18%}.streak-r{right:18%}
+.streak-l2{left:8%;opacity:.5}.streak-r2{right:8%;opacity:.5}
+
+/* Hero content */
+.hero-content{
+  position:relative;z-index:2;
+  max-width:1140px;margin:0 auto;width:100%;padding:0 28px;
+  display:grid;grid-template-columns:1fr 380px;
+  gap:48px;align-items:flex-end;
+  padding-bottom:max(52%,260px);
+}
+
+/* Override: push content to sit above road */
+.hero-content{
+  position:absolute;
+  top:56px;left:50%;transform:translateX(-50%);
+  display:grid;grid-template-columns:1fr 380px;
+  gap:48px;align-items:flex-start;
+  height:calc(100% - 56px);
+  padding:56px 28px 0;
+  max-width:1140px;width:100%;
+}
+
+/* Speedo stays centered vertically (in the road zone) */
+.speedo-wrap{align-self:center}
+
+.hero-left{}
+
+.eyebrow{
+  display:flex;align-items:center;gap:12px;margin-bottom:20px;
+}
+.eyebrow::before{content:'';width:28px;height:1px;background:var(--orange)}
+.eyebrow-text{font-family:var(--f-m);font-size:10px;letter-spacing:.3em;color:var(--orange);text-transform:uppercase}
+
+.hero-h{
+  font-family:var(--f-d);
+  font-size:clamp(80px,10vw,140px);
+  line-height:.88;text-transform:uppercase;margin-bottom:22px;
+}
+.hero-h .a{display:block;color:var(--t0)}
+.hero-h .b{
+  display:block;color:var(--orange);
+  text-shadow:none;
+}
+.hero-h .c{display:block;color:var(--t0)}
+.hero-logo-wrap{margin-bottom:22px}
+.hero-logo-img{
+  width:min(400px,80vw);height:auto;display:block;
+  filter:invert(1);
+}
+
+.hero-body{
+  font-size:16px;color:var(--t1);max-width:460px;
+  line-height:1.75;margin-bottom:32px;
+}
+.hero-body strong{color:var(--t0)}
+
+.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:40px}
+
+.hero-stats{
+  display:flex;gap:40px;
+  padding-top:28px;position:relative;
+}
+.hero-stats::before{
+  content:'';display:block;position:absolute;
+  width:200px;height:1px;
+  top:0;left:0;
+  background:rgba(10,10,18,.1);
+}
+.sv{font-family:var(--f-d);font-size:34px;color:var(--orange);line-height:1}
+.sl{font-size:11px;color:var(--t2);margin-top:4px;text-transform:uppercase;letter-spacing:.06em}
+
+/* Hero Speedometer (right side) */
+.speedo-wrap{
+  display:flex;justify-content:center;align-items:center;
+  position:relative;
+}
+/* Frosted cream disc — makes speedo readable over the dark road */
+.speedo-wrap::before{
+  content:'';position:absolute;inset:-14%;
+  background:radial-gradient(circle,
+    rgba(249,248,244,.96) 30%,
+    rgba(249,248,244,.72) 54%,
+    transparent 72%);
+  border-radius:50%;pointer-events:none;z-index:0;
+}
+.speedo-wrap svg{
+  width:100%;max-width:340px;height:auto;
+  filter:drop-shadow(0 2px 20px rgba(10,10,18,.08));
+  position:relative;z-index:1;
+}
+
+/* ─── HERO ENTRANCE ANIMATIONS ─────────────── */
+@keyframes heroIn{from{opacity:0;transform:translateY(36px)}to{opacity:1;transform:none}}
+@keyframes heroFade{from{opacity:0}to{opacity:1}}
+.eyebrow.fi{animation:heroIn .65s cubic-bezier(.16,1,.3,1) .05s both}
+.hero-h .a{animation:heroIn .8s cubic-bezier(.16,1,.3,1) .12s both}
+.hero-h .b{animation:heroIn .8s cubic-bezier(.16,1,.3,1) .24s both}
+.hero-h .c{animation:heroIn .8s cubic-bezier(.16,1,.3,1) .36s both}
+.hero-body{animation:heroIn .65s cubic-bezier(.16,1,.3,1) .48s both}
+.hero-actions{animation:heroIn .65s cubic-bezier(.16,1,.3,1) .58s both}
+.hero-stats{animation:heroIn .55s cubic-bezier(.16,1,.3,1) .68s both}
+.speedo-wrap{animation:heroIn .9s cubic-bezier(.16,1,.3,1) .2s both}
+.road-scene{animation:heroFade 1.4s ease .1s both}
+
+/* Scroll indicator pulse */
+.scroll-cue{
+  position:absolute;bottom:max(54%,270px);left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  opacity:0;animation:heroFade .8s ease 1.2s both;
+  pointer-events:none;z-index:3;
+}
+.scroll-cue-line{
+  width:1px;height:40px;
+  background:linear-gradient(to bottom,transparent,rgba(10,10,18,.35),transparent);
+  animation:scrollLine 1.8s ease-in-out infinite;
+}
+@keyframes scrollLine{
+  0%{transform:scaleY(0) translateY(-100%);opacity:0}
+  30%{opacity:1}
+  100%{transform:scaleY(1) translateY(0);opacity:0}
+}
+.scroll-cue-txt{
+  font-family:var(--f-m);font-size:8px;color:rgba(10,10,18,.35);letter-spacing:.22em;text-transform:uppercase;
+}
+
+/* ─── APPLE SCROLL REVEAL SYSTEM ────────────── */
+[data-ap]{
+  opacity:0;
+  transition:opacity .75s cubic-bezier(.16,1,.3,1),
+             transform .75s cubic-bezier(.16,1,.3,1);
+}
+[data-ap="up"]{transform:translateY(44px)}
+[data-ap="left"]{transform:translateX(-36px)}
+[data-ap="right"]{transform:translateX(36px)}
+[data-ap="scale"]{transform:scale(.93)}
+[data-ap="fade"]{transform:none}
+[data-ap].ap-in{opacity:1;transform:none}
+[data-ap-d="1"]{transition-delay:.06s}
+[data-ap-d="2"]{transition-delay:.12s}
+[data-ap-d="3"]{transition-delay:.18s}
+[data-ap-d="4"]{transition-delay:.24s}
+[data-ap-d="5"]{transition-delay:.30s}
+[data-ap-d="6"]{transition-delay:.36s}
+
+/* ─── SCROLL LABEL (like Apple's "Introducing…") */
+.ap-intro-label{
+  font-family:var(--f-m);font-size:10px;letter-spacing:.32em;
+  color:var(--orange);text-transform:uppercase;
+  display:block;margin-bottom:14px;
+}
+
+/* ─── FEATURES: sticky-left layout ───────────── */
+.feat-inner{
+  display:grid;
+  grid-template-columns:300px 1fr;
+  gap:80px;align-items:start;
+}
+.feat-intro{
+  position:sticky;top:88px;
+  /* no margin-bottom so it's self-contained */
+}
+
+/* ─── STEPS: progress line ───────────────────── */
+.steps-wrap{position:relative}
+.steps-progress{display:none}
+.steps-progress-fill{display:none}
+.st.ap-in .st-n{color:var(--orange)}
+
+/* ─── CTA SCALE REVEAL ───────────────────────── */
+.cta-h [data-word]{
+  display:inline-block;
+  opacity:0;
+  transform:translateY(28px);
+  transition:opacity .6s cubic-bezier(.16,1,.3,1),transform .6s cubic-bezier(.16,1,.3,1);
+}
+.cta-h.ap-in [data-word]{opacity:1;transform:none}
+.cta-h.ap-in [data-word]:nth-child(1){transition-delay:.0s}
+.cta-h.ap-in [data-word]:nth-child(2){transition-delay:.1s}
+.cta-h.ap-in [data-word]:nth-child(3){transition-delay:.2s}
+
+/* ─── FLOATING CTA ──────────────────────────── */
+.float-cta{
+  position:fixed;right:20px;top:50%;
+  transform:translateY(-50%);
+  z-index:200;
+  padding:12px 22px;
+  background:var(--orange);color:#fff;
+  font-family:var(--f-d);font-size:13px;letter-spacing:.18em;
+  text-transform:uppercase;text-decoration:none;
+  border-radius:40px;
+  box-shadow:0 4px 28px rgba(255,68,0,.3);
+  transition:opacity .35s,transform .35s,background .2s,box-shadow .2s;
+  opacity:0;pointer-events:none;
+}
+.float-cta.visible{opacity:1;pointer-events:all}
+.float-cta:hover{
+  background:#e83a00;
+  box-shadow:0 8px 36px rgba(255,68,0,.45);
+  transform:translateY(-50%) scale(1.05);
+}
+
+/* ─── PRODUCT EXPLODED VIEW ──────────────────── */
+#product{
+  padding:120px 0;
+  background:var(--bg);
+  border-top:1px solid var(--b0);
+}
+.pr-outer{max-width:1140px;margin:0 auto;padding:0 28px}
+.pr-track{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:80px;
+  align-items:start;
+}
+.pr-visual{
+  position:sticky;top:80px;
+  display:flex;flex-direction:column;
+  align-items:flex-start;
+}
+.pr-visual svg{
+  width:100%;max-width:440px;
+  overflow:visible;
+}
+.pr-chapters{
+  display:flex;flex-direction:column;
+  padding-top:80px;
+}
+.pr-ch{
+  min-height:60vh;
+  display:flex;flex-direction:column;
+  justify-content:center;
+  padding:60px 0;
+  opacity:.25;
+  transition:opacity .5s;
+}
+.pr-ch.active{opacity:1}
+.pr-ch-tag{
+  font-family:var(--f-m);font-size:9px;letter-spacing:.3em;
+  color:var(--orange);text-transform:uppercase;margin-bottom:16px;
+  opacity:0;transform:translateX(-12px);
+  transition:opacity .5s,transform .5s;
+}
+.pr-ch.active .pr-ch-tag{opacity:1;transform:none}
+.pr-ch h3{
+  font-family:var(--f-d);
+  font-size:clamp(40px,5vw,64px);
+  line-height:.96;text-transform:uppercase;
+  margin-bottom:20px;
+  color:var(--t0);
+}
+.pr-ch p{
+  font-size:16px;color:var(--t1);line-height:1.75;max-width:420px;
+}
+/* SVG component labels inside the diagram */
+.pr-comp-label{
+  font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.12em;
+  fill:var(--orange);opacity:0;
+  transition:opacity .4s;
+}
+.pr-comp-label.show{opacity:1}
+
+/* ─── CHALLENGE / DEMO SECTION ──────────────── */
+#challenge{
+  padding:100px 0;
+  background:var(--bg2);
+  border-top:1px solid var(--b0);
+  border-bottom:1px solid var(--b0);
+}
+
+.ch-grid{
+  max-width:1140px;margin:0 auto;padding:0 28px;
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:64px;align-items:start;
+}
+
+/* Left: copy panels */
+.ch-copy{min-height:480px}
+
+.ch-h{
+  font-family:var(--f-d);
+  font-size:clamp(52px,6.5vw,84px);
+  line-height:.94;text-transform:uppercase;margin-bottom:20px;
+}
+.ch-body{font-size:16px;color:var(--t1);line-height:1.75;margin-bottom:24px}
+
+.ch-panel{display:none;animation:fadeUp .4s ease both}
+.ch-panel.on{display:block}
+
+.c-hint{
+  font-family:var(--f-m);font-size:11px;color:var(--t2);
+  letter-spacing:.1em;line-height:1.8;
+}
+.c-hint strong{color:var(--t1);font-family:var(--f-b)}
+
+/* Result */
+.res-big{
+  font-family:var(--f-d);line-height:1;color:var(--orange);
+  font-size:clamp(80px,11vw,120px);margin-bottom:6px;
+}
+.res-sub{
+  font-family:var(--f-m);font-size:10px;color:var(--t2);
+  letter-spacing:.22em;text-transform:uppercase;margin-bottom:20px;
+}
+.res-fact{
+  font-size:15px;color:var(--t1);line-height:1.75;
+  padding:14px 18px;
+  border-left:2px solid var(--orange);background:var(--og);
+  margin-bottom:24px;
+}
+.res-fact strong{color:var(--t0)}
+
+/* ─── HIGHWAY POV PANEL ─────────────────────────── */
+#road-panel{
+  position:relative;
+  width:100%;
+  border-radius:16px;
+  overflow:hidden;
+  background:#03030a;
+  border:1px solid var(--b0);
+  box-shadow:0 0 0 1px rgba(0,216,245,.06),0 28px 72px rgba(0,0,0,.7);
+  aspect-ratio:4/3;
+  min-height:320px;
+}
+
+#rv-road{
+  position:absolute;inset:0;
+  width:100%;height:100%;display:block;
+}
+
+/* Fatigue vignette — opacity driven by JS */
+.rv-vignette{
+  position:absolute;inset:0;
+  pointer-events:none;z-index:3;
+  background:radial-gradient(ellipse at 50% 50%,
+    transparent 30%,
+    rgba(20,0,0,.55) 65%,
+    rgba(0,0,0,.95) 100%);
+  opacity:0;transition:opacity .12s linear;
+}
+
+/* HUD overlay */
+.rv-hud{
+  position:absolute;top:0;left:0;right:0;
+  display:flex;justify-content:space-between;align-items:flex-start;
+  padding:14px 16px 22px;
+  background:linear-gradient(to bottom,rgba(0,0,0,.65) 0%,transparent 100%);
+  pointer-events:none;z-index:10;
+}
+.rv-hud-left{display:flex;flex-direction:column;gap:1px}
+.rv-spd-num{
+  font-family:var(--f-d);font-size:52px;line-height:1;color:var(--t0);
+  text-shadow:0 0 24px rgba(0,216,245,.25);
+  transition:color .35s,text-shadow .35s;
+}
+.rv-spd-num.cruise-color{color:var(--green);text-shadow:0 0 24px rgba(0,240,122,.45)}
+.rv-spd-num.brake-color{color:var(--red);text-shadow:0 0 24px rgba(255,34,68,.4)}
+.rv-spd-unit{font-family:var(--f-m);font-size:7px;color:var(--t2);letter-spacing:.28em}
+.rv-hud-right{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.rv-fat-row{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.rv-fat-lbl{font-family:var(--f-m);font-size:7px;color:var(--t2);letter-spacing:.2em;text-transform:uppercase}
+.rv-fat-val{font-family:var(--f-m);font-size:13px;color:var(--t2);letter-spacing:.08em;transition:color .4s}
+
+/* Centre status (timer + message) */
+.rv-status{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:10;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+.rv-timer{
+  font-family:var(--f-d);font-size:44px;line-height:1;color:var(--t0);
+  text-shadow:0 2px 24px rgba(0,0,0,.9);
+  min-height:48px;display:block;text-align:center;
+}
+.rv-dmsg{
+  font-family:var(--f-m);font-size:9px;color:var(--t2);letter-spacing:.18em;
+  text-align:center;min-height:14px;display:block;
+  text-shadow:0 1px 8px rgba(0,0,0,.8);
+  transition:color .3s;
+}
+
+/* Bottom control panels */
+.rv-bottom-panel{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:14px 18px 18px;
+  background:linear-gradient(to top,rgba(0,0,0,.92) 0%,rgba(0,0,0,.6) 60%,transparent 100%);
+  z-index:10;
+}
+
+/* Handlebar assembly */
+.handlebar-assembly{
+  display:flex;align-items:center;justify-content:center;
+  gap:0;margin-bottom:9px;
+}
+.hb-arm{
+  height:8px;flex:1;max-width:80px;
+  background:linear-gradient(135deg,var(--b1),var(--b0));
+  border-radius:4px;overflow:hidden;position:relative;
+}
+.hb-arm::after{
+  content:'';position:absolute;inset:0;
+  background:repeating-linear-gradient(
+    90deg,rgba(255,255,255,.04) 0,rgba(255,255,255,.04) 3px,
+    transparent 3px,transparent 7px);
+}
+.hb-arm-l{border-radius:6px 0 0 6px}
+.hb-arm-r{border-radius:0 6px 6px 6px}
+
+/* Throttle grip button */
+.t-btn{
+  width:90px;height:90px;border-radius:50%;flex-shrink:0;
+  background:
+    radial-gradient(circle at 38% 32%,rgba(255,255,255,.05) 0%,transparent 50%),
+    repeating-linear-gradient(45deg,rgba(255,255,255,.015) 0,rgba(255,255,255,.015) 1.5px,transparent 1.5px,transparent 8px),
+    #0d0d16;
+  border:1.5px solid var(--b1);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  cursor:pointer;user-select:none;-webkit-user-select:none;
+  touch-action:none;-webkit-tap-highlight-color:transparent;
+  outline:none;
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.5),0 6px 24px rgba(0,0,0,.7);
+  transition:all .2s;
+}
+.t-btn:hover,.t-btn.on{
+  border-color:var(--cyan);
+  box-shadow:0 0 40px rgba(0,216,245,.3),inset 0 0 16px rgba(0,216,245,.07),0 6px 24px rgba(0,0,0,.5);
+}
+.t-btn.done{border-color:var(--orange);box-shadow:0 0 32px rgba(255,85,0,.2),0 6px 24px rgba(0,0,0,.5)}
+.t-main{
+  font-family:var(--f-d);font-size:22px;letter-spacing:.1em;
+  color:var(--t0);line-height:1;pointer-events:none;transition:color .2s;
+}
+.t-btn.on .t-main{color:var(--cyan)}
+.t-btn.done .t-main{color:var(--orange);font-size:16px}
+.t-sub{font-family:var(--f-m);font-size:7px;letter-spacing:.28em;color:var(--t2);pointer-events:none;text-transform:uppercase}
+
+/* Hold hint */
+.rv-cue{text-align:center}
+.rv-cue-text{font-family:var(--f-m);font-size:8px;color:var(--t2);letter-spacing:.18em;text-transform:uppercase}
+.rv-see-hmt{
+  margin-top:10px;
+  padding:10px 22px;
+  background:var(--orange);color:#fff;
+  font-family:var(--f-d);font-size:13px;letter-spacing:.14em;
+  text-transform:uppercase;border:none;border-radius:40px;
+  cursor:pointer;
+  box-shadow:0 4px 20px rgba(255,68,0,.35);
+  animation:rvSeeIn .4s ease both;
+}
+.rv-see-hmt:hover{filter:brightness(1.12)}
+@keyframes rvSeeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* Cruise HUD pill */
+.cruise-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 12px;
+  border:1px solid rgba(0,240,122,.4);color:var(--green);
+  font-family:var(--f-m);font-size:9px;letter-spacing:.22em;
+  border-radius:40px;
+  opacity:0;transition:opacity .4s;
+  box-shadow:0 0 12px var(--gg);
+  pointer-events:none;
+}
+.cruise-pill.on{opacity:1}
+.cp-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:pdot 1.6s ease infinite}
+
+/* HMT demo bottom panel */
+.rv-demo-panel{flex-direction:column;gap:10px}
+.rv-demo-row{display:flex;align-items:center;gap:14px}
+.demo-spd-mini{text-align:center;min-width:72px}
+.dsn{font-family:var(--f-d);font-size:52px;line-height:1;color:var(--t0);transition:color .4s}
+.dsn.cruise{color:var(--green);text-shadow:0 0 28px rgba(0,240,122,.4)}
+.dsn.brake{color:var(--red);text-shadow:0 0 28px rgba(255,34,68,.3)}
+.ds-unit{font-family:var(--f-m);font-size:8px;color:var(--t2);letter-spacing:.28em}
+
+.ctrl-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1}
+.ctrl{
+  padding:13px 10px;font-family:var(--f-d);
+  font-size:18px;letter-spacing:.08em;
+  border:none;cursor:pointer;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:all .22s;
+}
+.ctrl span{font-size:13px}
+.ctrl-brake{background:var(--rg);color:var(--red);border:1px solid rgba(255,34,68,.25)}
+.ctrl-brake:hover:not(:disabled){background:rgba(255,34,68,.2);box-shadow:0 0 20px var(--rg)}
+.ctrl-brake:disabled{opacity:.3;cursor:not-allowed}
+.ctrl-resume{background:var(--s0);color:var(--t2);border:1px solid var(--b1);opacity:.35;cursor:not-allowed}
+.ctrl-resume.rdy{color:var(--green);border-color:rgba(0,240,122,.4);opacity:1;cursor:pointer;animation:rpulse 1.6s ease infinite}
+.ctrl-resume.rdy:hover{background:var(--gg)}
+
+.demo-log{
+  font-family:var(--f-m);font-size:9px;color:var(--t2);
+  letter-spacing:.1em;line-height:1.7;padding:8px 12px;
+  border-left:2px solid var(--b1);border-radius:0 4px 4px 0;
+  min-height:36px;transition:border-color .3s,color .3s;
+  background:rgba(0,0,0,.35);
+}
+.demo-log.ok{border-color:rgba(0,240,122,.5);color:var(--green)}
+.demo-log.brk{border-color:rgba(255,34,68,.5);color:var(--red)}
+
+/* Shake on fatigue */
+#road-panel.shake{animation:rvShake .15s linear infinite}
+#road-panel.shake-hard{animation:rvShakeHard .08s linear infinite}
+
+/* Hidden compat elements */
+.rv-compat{position:absolute;pointer-events:none;opacity:0;width:0;height:0;overflow:hidden}
+
+/* ─── FEATURES ──────────────────────────────── */
+#features{padding:100px 0}
+.feat-wrap{max-width:1140px;margin:0 auto;padding:0 28px}
+.feat-intro{max-width:600px;margin-bottom:60px}
+.feat-intro h2{
+  font-family:var(--f-d);font-size:clamp(52px,6vw,84px);
+  line-height:.94;text-transform:uppercase;margin-bottom:16px;
+}
+.feat-intro p{font-size:16px;color:var(--t1);line-height:1.75}
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+.fc{
+  padding:36px 28px;background:var(--s0);
+  border-top:2px solid transparent;
+  transition:background .2s,border-color .2s;
+}
+.fc:hover{background:var(--s1);border-top-color:var(--orange)}
+.fc-ico{
+  width:44px;height:44px;border-radius:10px;
+  background:var(--cg);border:1px solid rgba(255,68,0,.18);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:18px;
+}
+.fc-ico svg{width:22px;height:22px;stroke:var(--orange);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.fc h3{font-family:var(--f-b);font-weight:600;font-size:17px;margin-bottom:8px}
+.fc p{font-size:14px;color:var(--t1);line-height:1.65}
+
+/* ─── HOW IT WORKS ──────────────────────────── */
+#howto{padding:100px 0;background:var(--s0);border-top:1px solid var(--b0)}
+.hw-wrap{max-width:1140px;margin:0 auto;padding:0 28px}
+.hw-wrap h2{font-family:var(--f-d);font-size:clamp(52px,6vw,84px);line-height:.94;text-transform:uppercase;margin-bottom:60px}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.st{
+  padding:36px 24px;background:var(--bg2);
+  border-top:2px solid transparent;
+  transition:all .2s;
+}
+.st:hover{background:var(--s1);border-top-color:var(--orange)}
+.st:hover .st-n{color:var(--orange)}
+.st-n{font-family:var(--f-d);font-size:72px;color:rgba(10,10,18,.1);line-height:1;margin-bottom:16px;transition:color .2s}
+.st h3{font-weight:600;font-size:16px;margin-bottom:8px}
+.st p{font-size:13px;color:var(--t1);line-height:1.65}
+
+/* ─── BIKE SEARCH ───────────────────────────── */
+.bk-search-wrap{
+  position:relative;margin-bottom:20px;max-width:360px;
+}
+.bk-search-wrap::before{
+  content:'↳';position:absolute;left:14px;top:50%;
+  transform:translateY(-50%);
+  color:var(--t2);font-size:14px;pointer-events:none;
+  font-family:var(--f-m);
+}
+.bk-search{
+  width:100%;padding:11px 16px 11px 38px;
+  font-family:var(--f-m);font-size:11px;letter-spacing:.1em;
+  background:var(--bg2);
+  border:1px solid rgba(10,10,18,.14);
+  color:var(--t0);outline:none;
+  transition:border-color .2s,box-shadow .2s;
+}
+.bk-search:focus{
+  border-color:var(--orange);
+  box-shadow:0 0 0 3px rgba(255,68,0,.09);
+}
+.bk-search::placeholder{color:var(--t2)}
+.bk-no-results{
+  display:none;padding:32px 20px;
+  font-family:var(--f-m);font-size:11px;color:var(--t2);
+  letter-spacing:.14em;text-transform:uppercase;
+}
+
+/* ─── BIKES ──────────────────────────────────── */
+#bikes{padding:100px 0}
+.bk-wrap{max-width:1140px;margin:0 auto;padding:0 28px}
+.bk-wrap h2{font-family:var(--f-d);font-size:clamp(52px,6vw,84px);line-height:.94;text-transform:uppercase;margin-bottom:16px}
+.bk-sub{font-size:16px;color:var(--t1);max-width:520px;line-height:1.75;margin-bottom:36px}
+.bf{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.bf-b{
+  padding:7px 16px;background:transparent;
+  border:1px solid rgba(10,10,18,.15);color:var(--t2);
+  font-family:var(--f-m);font-size:9px;letter-spacing:.18em;
+  text-transform:uppercase;cursor:pointer;transition:all .18s;
+}
+.bf-b.on,.bf-b:hover{border-color:var(--orange);color:var(--orange);background:var(--og)}
+.bk-count{font-family:var(--f-m);font-size:10px;color:var(--t2);letter-spacing:.14em;margin-bottom:20px}
+.bk-count span{color:var(--orange)}
+.bk-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2px}
+.bk{
+  padding:22px 20px;background:var(--s0);
+  border-top:2px solid transparent;cursor:pointer;transition:background .18s,border-color .18s;
+  display:flex;flex-direction:column;
+}
+.bk:hover{background:var(--s1);border-top-color:var(--orange)}
+.bk.hide{display:none}
+.bk-br{font-family:var(--f-m);font-size:8px;letter-spacing:.26em;color:var(--orange);text-transform:uppercase;margin-bottom:6px}
+.bk-nm{font-weight:600;font-size:15px;line-height:1.3}
+.bk-pr{font-family:var(--f-m);font-size:11px;color:var(--t2);margin-top:8px;flex:1}
+.bk-cta{
+  font-family:var(--f-m);font-size:9px;letter-spacing:.12em;
+  color:var(--orange);text-transform:uppercase;margin-top:10px;
+  opacity:0;transition:opacity .18s;
+}
+.bk[data-pk]:hover .bk-cta{opacity:1}
+
+/* ─── CTA ────────────────────────────────────── */
+#cta{
+  padding:140px 24px;text-align:center;
+  position:relative;overflow:hidden;
+}
+#cta::before{
+  content:'';position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);pointer-events:none;
+  width:900px;height:500px;
+  background:radial-gradient(ellipse,rgba(255,68,0,.06) 0%,transparent 68%);
+}
+.cta-in{max-width:680px;margin:0 auto;position:relative;z-index:1}
+.cta-h{
+  font-family:var(--f-d);
+  font-size:clamp(72px,11vw,120px);
+  line-height:.88;text-transform:uppercase;margin-bottom:24px;
+}
+.cta-sub{font-size:17px;color:var(--t1);line-height:1.75;margin-bottom:36px}
+.cta-pr{
+  font-family:var(--f-m);font-size:10px;color:var(--t2);
+  letter-spacing:.26em;text-transform:uppercase;margin-bottom:32px;
+}
+.cta-pr strong{
+  display:block;margin-top:6px;
+  font-family:var(--f-d);font-size:64px;font-weight:400;
+  color:var(--t0);letter-spacing:.02em;line-height:1;
+}
+.perks{display:flex;justify-content:center;gap:24px;flex-wrap:wrap;margin-bottom:36px}
+.perk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--t1)}
+.perk::before{content:'✓';color:var(--green);font-weight:700}
+
+/* ─── FOOTER ─────────────────────────────────── */
+/* ─── PRODUCT DETAIL MODAL ───────────────────── */
+.bk[data-pk]{cursor:pointer}
+.bk[data-pk]:hover .bk-nm{color:var(--orange)}
+.pd-overlay{
+  position:fixed;inset:0;z-index:1000;
+  background:rgba(10,10,18,.72);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;
+  opacity:0;pointer-events:none;
+  transition:opacity .3s ease;
+}
+.pd-overlay.open{opacity:1;pointer-events:all}
+.pd-modal{
+  background:var(--bg);
+  border-radius:16px;
+  max-width:860px;width:100%;
+  max-height:90vh;
+  overflow:hidden;               /* no whole-modal scroll */
+  display:grid;grid-template-columns:1fr 1fr;
+  position:relative;
+  transform:translateY(24px) scale(.97);
+  transition:transform .35s cubic-bezier(.22,1,.36,1);
+}
+.pd-overlay.open .pd-modal{transform:none}
+.pd-close{
+  position:absolute;top:14px;right:14px;z-index:10;
+  width:36px;height:36px;border-radius:50%;
+  background:var(--s1);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t1);transition:background .2s;
+}
+.pd-close:hover{background:var(--b1)}
+.pd-close svg{width:16px;height:16px}
+/* Image column — sticky, never scrolls */
+.pd-img-col{
+  background:var(--s0);
+  border-radius:16px 0 0 16px;
+  padding:32px 24px 28px;
+  display:flex;flex-direction:column;gap:20px;
+  align-items:center;justify-content:center;
+  position:sticky;top:0;        /* stays centred while right col scrolls */
+  align-self:stretch;
+  height:90vh;max-height:90vh;
+}
+.pd-img-wrap{
+  width:100%;flex:1;min-height:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.pd-img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.pd-badges{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.pd-badge{
+  font-family:var(--f-m);font-size:9px;letter-spacing:.14em;
+  padding:5px 10px;border-radius:20px;
+  background:rgba(255,68,0,.1);color:var(--orange);
+  border:1px solid rgba(255,68,0,.2);text-transform:uppercase;
+}
+/* Info column — only this scrolls */
+.pd-info-col{
+  padding:36px 32px 36px;
+  overflow-y:auto;
+  max-height:90vh;
+  scrollbar-width:thin;
+  scrollbar-color:var(--b1) transparent;
+}
+.pd-info-col::-webkit-scrollbar{width:4px}
+.pd-info-col::-webkit-scrollbar-thumb{background:var(--b1);border-radius:2px}
+.pd-eyebrow{
+  font-family:var(--f-m);font-size:9px;letter-spacing:.26em;
+  color:var(--orange);text-transform:uppercase;margin-bottom:8px;
+}
+.pd-title{
+  font-family:var(--f-d);font-size:clamp(22px,3vw,32px);
+  letter-spacing:.03em;color:var(--t0);line-height:1.1;margin-bottom:14px;
+}
+.pd-price-row{display:flex;align-items:baseline;gap:12px;margin-bottom:18px}
+.pd-price{
+  font-family:var(--f-d);font-size:28px;letter-spacing:.04em;color:var(--orange);
+}
+.pd-emi{font-family:var(--f-m);font-size:9px;color:var(--t2);letter-spacing:.1em}
+.pd-desc{
+  font-family:var(--f-b);font-size:14px;line-height:1.75;
+  color:var(--t1);margin-bottom:20px;
+}
+.pd-features{
+  list-style:none;padding:0;margin:0 0 28px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.pd-features li{
+  font-family:var(--f-b);font-size:13px;color:var(--t1);line-height:1.5;
+  padding-left:16px;position:relative;
+}
+.pd-features li::before{
+  content:'—';position:absolute;left:0;
+  color:var(--orange);font-weight:700;
+}
+/* Feature icon grid */
+.pd-icons{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:8px;margin:0 0 20px;
+}
+.pd-icon{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:10px 6px;background:var(--s0);border-radius:10px;text-align:center;
+}
+.pd-icon-img{width:32px;height:32px;display:flex;align-items:center;justify-content:center}
+.pd-icon-img svg{width:26px;height:26px;stroke:var(--orange);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pd-icon-lbl{font-family:var(--f-b);font-size:10px;font-weight:600;color:var(--t0);line-height:1.3}
+/* Accordion */
+.pd-accordion{margin:0 0 20px;border-top:1px solid var(--b0)}
+.pd-ac-item{border-bottom:1px solid var(--b0)}
+.pd-ac-btn{
+  width:100%;display:flex;justify-content:space-between;align-items:center;
+  padding:11px 0;background:none;border:none;cursor:pointer;
+  font-family:var(--f-d);font-size:16px;letter-spacing:.05em;color:var(--orange);
+  text-align:left;gap:8px;
+}
+.pd-ac-icon{
+  font-family:var(--f-m);font-size:14px;color:var(--orange);
+  transition:transform .2s;flex-shrink:0;line-height:1;
+}
+.pd-ac-item.open .pd-ac-icon{transform:rotate(45deg)}
+.pd-ac-body{
+  max-height:0;overflow:hidden;
+  transition:max-height .3s ease;
+}
+.pd-ac-item.open .pd-ac-body{max-height:500px}
+.pd-ac-inner{
+  padding:0 0 14px;
+  font-family:var(--f-b);font-size:13px;color:var(--t1);line-height:1.7;
+}
+.pd-ac-inner ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:5px}
+.pd-ac-inner li{padding-left:14px;position:relative}
+.pd-ac-inner li::before{content:'—';position:absolute;left:0;color:var(--orange);font-weight:700}
+/* Accessories */
+.pd-accessories{margin:0 0 22px}
+.pd-acc-lbl{
+  font-family:var(--f-m);font-size:8px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--t2);margin-bottom:10px;
+}
+.pd-acc-row{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.pd-acc-row::-webkit-scrollbar{display:none}
+.pd-acc-card{
+  min-width:110px;flex:0 0 110px;
+  background:var(--s0);border-radius:10px;overflow:hidden;
+  border:1px solid var(--b0);text-decoration:none;
+  transition:border-color .2s,background .2s;
+}
+.pd-acc-card:hover{border-color:var(--orange);background:var(--s1)}
+.pd-acc-thumb{
+  height:72px;display:flex;align-items:center;justify-content:center;
+  background:#fff;padding:6px;
+}
+.pd-acc-thumb img{max-height:60px;max-width:100%;object-fit:contain}
+.pd-acc-info{padding:7px 9px 9px}
+.pd-acc-name{font-family:var(--f-b);font-size:10px;font-weight:600;color:var(--t0);line-height:1.35;margin-bottom:3px}
+.pd-acc-price{font-family:var(--f-m);font-size:10px;color:var(--orange)}
+.pd-ctas{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.pd-buy{display:inline-flex;align-items:center}
+/* Video embed */
+.pd-video-wrap{
+  margin:0 0 24px;
+  border-radius:10px;overflow:hidden;
+  border:1.5px solid var(--b1);
+  background:#000;
+}
+.pd-video-label{
+  font-family:var(--f-m);font-size:8px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--orange);
+  padding:10px 14px 0;background:#000;
+}
+.pd-video-frame{
+  position:relative;width:100%;padding-top:56.25%;/* 16:9 */
+}
+.pd-video-frame iframe{
+  position:absolute;inset:0;width:100%;height:100%;border:none;
+}
+.pd-video-title-bar{
+  font-family:var(--f-b);font-size:11px;color:#888;
+  padding:8px 14px;background:#000;line-height:1.4;
+}
+.pd-reset-btn{
+  background:none;border:none;cursor:pointer;
+  font-family:var(--f-m);font-size:10px;letter-spacing:.14em;
+  color:var(--t2);text-transform:uppercase;
+  transition:color .2s;
+}
+.pd-reset-btn:hover{color:var(--t0)}
+/* Mobile */
+@media(max-width:680px){
+  .pd-overlay{padding:0;align-items:flex-end}
+  .pd-modal{
+    grid-template-columns:1fr;
+    border-radius:20px 20px 0 0;
+    max-height:96vh;
+    overflow:hidden;
+  }
+  /* Image panel: compact strip at top, NOT full height */
+  .pd-img-col{
+    position:static;           /* no sticky on mobile */
+    height:auto;max-height:none;
+    border-radius:20px 20px 0 0;
+    padding:20px 24px 16px;
+    flex-direction:row;         /* image + badges side by side */
+    gap:16px;justify-content:flex-start;align-items:center;
+  }
+  .pd-img-wrap{
+    flex:0 0 auto;
+    width:110px;height:110px;min-height:0;
+  }
+  .pd-badges{
+    flex-direction:column;align-items:flex-start;gap:5px;
+  }
+  .pd-badge{font-size:8px;padding:4px 8px}
+  /* Info col scrolls on mobile */
+  .pd-info-col{
+    padding:20px 20px 32px;
+    overflow-y:auto;
+    max-height:calc(96vh - 150px);
+  }
+  /* Tighten up info section */
+  .pd-title{font-size:22px;margin-bottom:10px}
+  .pd-price{font-size:24px}
+  .pd-desc{font-size:13px;margin-bottom:14px}
+  /* Feature icons: keep 3-col but smaller */
+  .pd-icons{gap:6px;margin-bottom:14px}
+  .pd-icon{padding:8px 4px}
+  .pd-icon-img svg{width:22px;height:22px}
+  .pd-icon-lbl{font-size:9px}
+  /* Accordion */
+  .pd-ac-btn{font-size:14px;padding:10px 0}
+  /* Accessories row */
+  .pd-acc-row{gap:8px}
+  .pd-acc-card{min-width:96px;flex:0 0 96px}
+  .pd-acc-thumb{height:60px}
+  .pd-acc-name{font-size:9px}
+  /* Close button: bigger tap target on mobile */
+  .pd-close{width:40px;height:40px;top:10px;right:10px}
+  /* Video */
+  .pd-video-wrap{border-radius:8px}
+}
+
+/* ─── PRODUCT PAGE (hash-routed) ──────────────── */
+#pp-view{min-height:100vh;padding-top:72px;background:var(--bg)}
+.pp-back-bar{
+  position:sticky;top:56px;z-index:20;
+  background:rgba(249,248,244,.92);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--b0);
+  padding:10px 28px;
+  display:flex;align-items:center;gap:14px;
+}
+.pp-back-btn{
+  background:none;border:none;cursor:pointer;
+  font-family:var(--f-m);font-size:9px;letter-spacing:.18em;
+  color:var(--t1);text-transform:uppercase;padding:0;
+  transition:color .15s;
+  display:flex;align-items:center;gap:6px;
+}
+.pp-back-btn:hover{color:var(--orange)}
+.pp-crumb{
+  font-family:var(--f-m);font-size:9px;color:var(--t2);
+  letter-spacing:.12em;text-transform:uppercase;
+}
+.pp-layout{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:48px;max-width:1100px;margin:0 auto;
+  padding:40px 28px 48px;align-items:start;
+}
+.pp-img-col{
+  position:sticky;top:120px;
+  background:var(--s0);border-radius:16px;
+  padding:40px 32px 28px;
+  display:flex;flex-direction:column;gap:20px;
+  align-items:center;
+}
+.pp-img-wrap{
+  width:100%;aspect-ratio:1/1;
+  display:flex;align-items:center;justify-content:center;
+  max-height:360px;
+}
+.pp-img-wrap img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.pp-title{
+  font-family:var(--f-d);
+  font-size:clamp(32px,4.5vw,52px);
+  letter-spacing:.03em;color:var(--t0);line-height:1;
+  margin-bottom:14px;
+}
+.pp-ctas{margin-top:24px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.pp-buy{display:inline-flex;align-items:center}
+.pp-below{
+  max-width:1100px;margin:0 auto;
+  padding:0 28px 64px;
+}
+.pp-video-wrap{
+  max-width:680px;margin:0 0 40px;
+  border-radius:12px;overflow:hidden;
+  border:1.5px solid var(--b1);background:#000;
+}
+.pp-video-label{
+  font-family:var(--f-m);font-size:8px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--orange);
+  padding:10px 14px 0;background:#000;
+}
+/* Mobile */
+@media(max-width:768px){
+  #pp-view{padding-top:56px}
+  .pp-back-bar{top:56px;padding:10px 16px}
+  .pp-layout{
+    grid-template-columns:1fr;gap:0;
+    padding:0 0 40px;
+  }
+  .pp-img-col{
+    position:static;
+    border-radius:0;padding:24px 20px 16px;
+    flex-direction:row;gap:16px;align-items:center;
+  }
+  .pp-img-wrap{
+    flex:0 0 auto;width:120px;height:120px;
+    max-height:none;
+  }
+  .pp-img-col .pd-badges{flex-direction:column;align-items:flex-start;gap:5px}
+  .pp-info-col{padding:20px 20px 0}
+  .pp-title{font-size:28px}
+  .pp-below{padding:0 16px 48px}
+  .pp-video-wrap{max-width:100%}
+}
+
+/* ─── INSTAGRAM STRIP ─────────────────────────── */
+#ig-strip{background:#0a0a0a;padding:52px 0 40px}
+.ig-head{
+  text-align:center;margin-bottom:28px;
+  font-family:var(--f-b);font-size:clamp(18px,2.2vw,24px);font-weight:600;
+  color:rgba(255,255,255,.55);
+  letter-spacing:-.01em;
+}
+.ig-handle{
+  color:#e8c63a;text-decoration:none;margin-left:6px;
+  transition:opacity .2s;
+}
+.ig-handle:hover{opacity:.75}
+.ig-scroll-wrap{overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;}
+.ig-scroll-wrap::-webkit-scrollbar{display:none}
+.ig-row{
+  display:flex;gap:10px;padding:0 32px;
+  width:max-content;
+}
+.ig-card{
+  display:block;text-decoration:none;flex-shrink:0;
+  width:180px;border-radius:8px;overflow:hidden;
+  transition:transform .25s,opacity .25s;
+}
+.ig-card:hover{transform:scale(1.04);opacity:.9}
+.ig-thumb{
+  width:180px;height:240px;
+  position:relative;display:flex;flex-direction:column;
+  justify-content:space-between;padding:12px;
+}
+.ig-play{
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-60%);
+  width:40px;height:40px;border-radius:50%;
+  background:rgba(255,255,255,.2);backdrop-filter:blur(4px);
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;color:#fff;padding-left:3px;
+  border:1px solid rgba(255,255,255,.3);
+}
+.ig-caption{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:28px 10px 10px;
+  background:linear-gradient(transparent,rgba(0,0,0,.8));
+  font-family:var(--f-b);font-size:10px;line-height:1.35;
+  font-weight:600;color:#fff;
+}
+
+/* ─── FOOTER ──────────────────────────────────── */
+#footer-main{
+  background:#0a0a0a;
+  padding:0 32px 0;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.ft-top{
+  display:flex;align-items:center;justify-content:flex-end;
+  gap:20px;padding:28px 0 20px;flex-wrap:wrap;
+}
+.ft-socials{display:flex;gap:10px}
+.ft-soc{
+  width:42px;height:42px;border-radius:50%;
+  background:rgba(255,255,255,.08);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;text-decoration:none;
+  transition:background .2s;
+}
+.ft-soc:hover{background:rgba(255,255,255,.18)}
+.ft-soc svg{width:18px;height:18px}
+.ft-tagline{
+  font-family:var(--f-m);font-size:11px;letter-spacing:.14em;
+  color:rgba(255,255,255,.4);text-transform:uppercase;
+}
+.ft-heart{color:#e84040;font-size:13px}
+.ft-divider{height:1px;background:rgba(255,255,255,.07);margin:0 0 32px}
+.ft-grid{
+  display:grid;
+  grid-template-columns:1.6fr 1fr 1fr;
+  gap:40px;padding-bottom:40px;
+}
+.ft-col-h{
+  font-family:var(--f-b);font-weight:600;font-size:17px;
+  color:#fff;margin-bottom:20px;letter-spacing:-.01em;
+}
+/* Subscribe */
+.ft-form{display:flex;flex-direction:column;gap:14px}
+.ft-field{display:flex;flex-direction:column;gap:6px}
+.ft-label{font-family:var(--f-m);font-size:10px;letter-spacing:.14em;color:rgba(255,255,255,.4);text-transform:uppercase}
+.ft-input{
+  background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.2);
+  padding:8px 0;color:#fff;font-family:var(--f-b);font-size:14px;outline:none;
+  transition:border-color .2s;
+}
+.ft-input:focus{border-color:var(--orange)}
+.ft-input::placeholder{color:rgba(255,255,255,.2)}
+.ft-sub-btn{
+  align-self:flex-start;
+  padding:11px 28px;border-radius:40px;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);
+  color:#fff;font-family:var(--f-b);font-size:13px;font-weight:500;
+  cursor:pointer;transition:background .2s,border-color .2s;
+}
+.ft-sub-btn:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35)}
+/* Links */
+.ft-links{display:flex;flex-direction:column;gap:14px;padding-top:4px}
+.ft-link{
+  font-family:var(--f-b);font-size:13px;color:rgba(255,255,255,.55);
+  text-decoration:underline;text-underline-offset:3px;
+  text-decoration-color:rgba(255,255,255,.2);
+  transition:color .2s;
+}
+.ft-link:hover{color:#fff}
+/* Contact */
+.ft-contact{display:flex;flex-direction:column;gap:10px;padding-top:4px}
+.ft-addr{font-family:var(--f-b);font-size:13px;color:rgba(255,255,255,.55);line-height:1.6;margin:0}
+.ft-contact-link{font-family:var(--f-b);font-size:13px;color:rgba(255,255,255,.55);text-decoration:none;transition:color .2s}
+.ft-contact-link:hover{color:#fff}
+/* Copyright bar */
+.ft-copy{
+  border-top:1px solid rgba(255,255,255,.07);
+  padding:18px 0;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+}
+.ft-copy-text{font-family:var(--f-m);font-size:10px;letter-spacing:.1em;color:rgba(255,255,255,.25);text-transform:uppercase}
+/* Legacy footer compat */
+.fl{font-family:var(--f-d);font-size:16px;letter-spacing:.1em;color:var(--t1)}
+.fl em{color:var(--orange);font-style:normal}
+.fm,.fr{font-family:var(--f-m);font-size:10px;color:var(--t2);letter-spacing:.1em}
+
+/* ─── BIKER FLOURISHES ───────────────────────── */
+/* Racing checkered-flag band (CTA) */
+#cta::after{
+  content:'';position:absolute;left:0;right:0;top:0;height:14px;
+  background-image:conic-gradient(var(--t0) 90deg,transparent 0 180deg,var(--t0) 0 270deg,transparent 0);
+  background-size:14px 14px;opacity:.85;pointer-events:none;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 16%,#000 84%,transparent);
+          mask:linear-gradient(90deg,transparent,#000 16%,#000 84%,transparent);
+}
+/* Highway lane-marking divider between sections */
+.lane-divider{
+  position:relative;height:34px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--bg);
+}
+.lane-divider::before{
+  content:'';position:absolute;left:0;right:0;top:50%;height:3px;
+  transform:translateY(-50%);
+  background:repeating-linear-gradient(90deg,var(--b1) 0 34px,transparent 34px 64px);
+  -webkit-mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+          mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+  /* animation removed — static dashes only */
+}
+.lane-divider .lane-mark{
+  position:relative;z-index:1;
+  font-family:var(--f-m);font-size:9px;letter-spacing:.4em;
+  color:var(--orange);text-transform:uppercase;
+  background:var(--bg);padding:0 16px;
+  display:inline-flex;align-items:center;gap:9px;
+}
+.lane-divider .lane-mark::before,
+.lane-divider .lane-mark::after{content:'›››';color:var(--t2);letter-spacing:.05em;font-size:11px}
+@keyframes laneRun{to{background-position:64px 0}}
+@media(prefers-reduced-motion:reduce){.lane-divider::before{animation:none}}
+
+/* ─── RESPONSIVE ─────────────────────────────── */
+@media(max-width:1024px){
+  .feat-inner{grid-template-columns:260px 1fr;gap:48px}
+  .feat-grid{grid-template-columns:1fr 1fr}
+  .steps{grid-template-columns:1fr 1fr}
+  .bk-grid{grid-template-columns:repeat(3,1fr)}
+}
+@media(max-width:1024px){
+  /* Single column: keep the diagram pinned at top of the (now block-level)
+     track so the scroll-driven explode still reads while chapters scroll under it */
+  .pr-track{display:block}
+  .pr-visual{
+    position:sticky;top:56px;z-index:5;
+    align-items:center;
+    padding:16px 28px 14px;
+    margin:0 -28px;
+    background:var(--bg);
+    border-bottom:1px solid var(--b0);
+    box-shadow:0 10px 22px -12px rgba(10,10,18,.18);
+  }
+  .pr-visual .ap-intro-label{align-self:center}
+  .pr-visual svg{max-width:282px}
+  .pr-chapters{padding-top:18px}
+  .pr-ch{min-height:auto;padding:34px 0;opacity:.42}
+  .pr-ch:first-child{padding-top:18px}
+}
+
+@media(max-width:768px){
+  .float-cta{right:12px;padding:16px 9px;font-size:11px}
+  nav{padding:0 16px}
+  .nav-links,.nav-cta{display:none}
+  .nav-mob{display:flex}
+
+  .hero-content{
+    grid-template-columns:1fr;padding:20px 16px 0;
+    align-items:flex-start;height:auto;
+    position:relative;top:auto;left:auto;transform:none;
+    margin-top:56px;
+  }
+  /* Give hero enough bottom padding so road strip sits below all content */
+  #hero{
+    min-height:auto;padding-top:0;
+    padding-bottom:160px;        /* room for the road strip */
+    overflow:hidden;
+  }
+  /* Full-width cream wash on mobile — kills grid bleed across the whole section */
+  #hero::after{
+    width:100%;
+    background:linear-gradient(to bottom,
+      rgba(249,248,244,1) 0%,
+      rgba(249,248,244,1) 70%,
+      rgba(249,248,244,.5) 88%,
+      transparent 100%);
+  }
+  /* Road becomes a visual strip at the very bottom — never touches text */
+  .road-scene{height:160px;z-index:1}
+  .speedo-wrap{display:none}
+  .hero-h{font-size:clamp(68px,18vw,100px)}
+  /* Stats: equal 3-col grid, numbers smaller, labels tighter */
+  .hero-stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:0;
+    padding-top:20px;
+  }
+  .hero-stats > div{
+    padding:0 12px 0 0;
+    border-right:1px solid rgba(10,10,18,.1);
+  }
+  .hero-stats > div:last-child{border-right:none;padding-right:0;padding-left:12px}
+  .hero-stats > div:nth-child(2){padding:0 12px}
+  .sv{font-size:26px}
+  .sl{font-size:9px;letter-spacing:.04em;line-height:1.3;margin-top:3px}
+  .streak{display:none}
+  .scroll-cue{display:none}
+
+  #challenge{padding:72px 0}
+  .ch-grid{grid-template-columns:1fr;gap:40px;padding:0 16px}
+  .ch-copy{min-height:auto}
+  #road-panel{aspect-ratio:auto;min-height:300px}
+  .rv-spd-num{font-size:42px}
+  .dsn{font-size:42px}
+
+  #features{padding:72px 0}
+  .feat-wrap{padding:0 16px}
+  .feat-inner{grid-template-columns:1fr;gap:32px}
+  .feat-intro{position:static}
+  .feat-grid{grid-template-columns:1fr}
+
+  #howto{padding:72px 0}
+  .hw-wrap{padding:0 16px}
+  .steps{grid-template-columns:1fr}
+  .steps-progress{display:none}
+
+  #bikes{padding:72px 0}
+  .bk-wrap{padding:0 16px}
+  .bk-grid{grid-template-columns:1fr 1fr}
+
+  #cta{padding:100px 16px}
+  footer{padding:20px 16px;flex-direction:column;text-align:center}
+  .fm{display:none}
+  .btn{padding:12px 22px;font-size:13px}
+}
+@media(max-width:400px){.bk-grid{grid-template-columns:1fr}}
+
+/* ─── PRODUCT DETAIL MODAL ───────────────────── */
+.bk[data-pk]{cursor:pointer}
+.bk[data-pk]:hover .bk-nm{color:var(--orange)}
+.pd-overlay{
+  position:fixed;inset:0;z-index:1000;
+  background:rgba(10,10,18,.72);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;
+  opacity:0;pointer-events:none;
+  transition:opacity .3s ease;
+}
+.pd-overlay.open{opacity:1;pointer-events:all}
+.pd-modal{
+  background:var(--bg);
+  border-radius:16px;
+  max-width:860px;width:100%;
+  max-height:90vh;
+  overflow:hidden;               /* no whole-modal scroll */
+  display:grid;grid-template-columns:1fr 1fr;
+  position:relative;
+  transform:translateY(24px) scale(.97);
+  transition:transform .35s cubic-bezier(.22,1,.36,1);
+}
+.pd-overlay.open .pd-modal{transform:none}
+.pd-close{
+  position:absolute;top:14px;right:14px;z-index:10;
+  width:36px;height:36px;border-radius:50%;
+  background:var(--s1);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t1);transition:background .2s;
+}
+.pd-close:hover{background:var(--b1)}
+.pd-close svg{width:16px;height:16px}
+/* Image column — sticky, never scrolls */
+.pd-img-col{
+  background:var(--s0);
+  border-radius:16px 0 0 16px;
+  padding:32px 24px 28px;
+  display:flex;flex-direction:column;gap:20px;
+  align-items:center;justify-content:center;
+  position:sticky;top:0;        /* stays centred while right col scrolls */
+  align-self:stretch;
+  height:90vh;max-height:90vh;
+}
+.pd-img-wrap{
+  width:100%;flex:1;min-height:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.pd-img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.pd-badges{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.pd-badge{
+  font-family:var(--f-m);font-size:9px;letter-spacing:.14em;
+  padding:5px 10px;border-radius:20px;
+  background:rgba(255,68,0,.1);color:var(--orange);
+  border:1px solid rgba(255,68,0,.2);text-transform:uppercase;
+}
+/* Info column — only this scrolls */
+.pd-info-col{
+  padding:36px 32px 36px;
+  overflow-y:auto;
+  max-height:90vh;
+  scrollbar-width:thin;
+  scrollbar-color:var(--b1) transparent;
+}
+.pd-info-col::-webkit-scrollbar{width:4px}
+.pd-info-col::-webkit-scrollbar-thumb{background:var(--b1);border-radius:2px}
+.pd-eyebrow{
+  font-family:var(--f-m);font-size:9px;letter-spacing:.26em;
+  color:var(--orange);text-transform:uppercase;margin-bottom:8px;
+}
+.pd-title{
+  font-family:var(--f-d);font-size:clamp(22px,3vw,32px);
+  letter-spacing:.03em;color:var(--t0);line-height:1.1;margin-bottom:14px;
+}
+.pd-price-row{display:flex;align-items:baseline;gap:12px;margin-bottom:18px}
+.pd-price{
+  font-family:var(--f-d);font-size:28px;letter-spacing:.04em;color:var(--orange);
+}
+.pd-emi{font-family:var(--f-m);font-size:9px;color:var(--t2);letter-spacing:.1em}
+.pd-desc{
+  font-family:var(--f-b);font-size:14px;line-height:1.75;
+  color:var(--t1);margin-bottom:20px;
+}
+.pd-features{
+  list-style:none;padding:0;margin:0 0 28px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.pd-features li{
+  font-family:var(--f-b);font-size:13px;color:var(--t1);line-height:1.5;
+  padding-left:16px;position:relative;
+}
+.pd-features li::before{
+  content:'—';position:absolute;left:0;
+  color:var(--orange);font-weight:700;
+}
+/* Feature icon grid */
+.pd-icons{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:8px;margin:0 0 20px;
+}
+.pd-icon{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:10px 6px;background:var(--s0);border-radius:10px;text-align:center;
+}
+.pd-icon-img{width:32px;height:32px;display:flex;align-items:center;justify-content:center}
+.pd-icon-img svg{width:26px;height:26px;stroke:var(--orange);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pd-icon-lbl{font-family:var(--f-b);font-size:10px;font-weight:600;color:var(--t0);line-height:1.3}
+/* Accordion */
+.pd-accordion{margin:0 0 20px;border-top:1px solid var(--b0)}
+.pd-ac-item{border-bottom:1px solid var(--b0)}
+.pd-ac-btn{
+  width:100%;display:flex;justify-content:space-between;align-items:center;
+  padding:11px 0;background:none;border:none;cursor:pointer;
+  font-family:var(--f-d);font-size:16px;letter-spacing:.05em;color:var(--orange);
+  text-align:left;gap:8px;
+}
+.pd-ac-icon{
+  font-family:var(--f-m);font-size:14px;color:var(--orange);
+  transition:transform .2s;flex-shrink:0;line-height:1;
+}
+.pd-ac-item.open .pd-ac-icon{transform:rotate(45deg)}
+.pd-ac-body{
+  max-height:0;overflow:hidden;
+  transition:max-height .3s ease;
+}
+.pd-ac-item.open .pd-ac-body{max-height:500px}
+.pd-ac-inner{
+  padding:0 0 14px;
+  font-family:var(--f-b);font-size:13px;color:var(--t1);line-height:1.7;
+}
+.pd-ac-inner ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:5px}
+.pd-ac-inner li{padding-left:14px;position:relative}
+.pd-ac-inner li::before{content:'—';position:absolute;left:0;color:var(--orange);font-weight:700}
+/* Accessories */
+.pd-accessories{margin:0 0 22px}
+.pd-acc-lbl{
+  font-family:var(--f-m);font-size:8px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--t2);margin-bottom:10px;
+}
+.pd-acc-row{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.pd-acc-row::-webkit-scrollbar{display:none}
+.pd-acc-card{
+  min-width:110px;flex:0 0 110px;
+  background:var(--s0);border-radius:10px;overflow:hidden;
+  border:1px solid var(--b0);text-decoration:none;
+  transition:border-color .2s,background .2s;
+}
+.pd-acc-card:hover{border-color:var(--orange);background:var(--s1)}
+.pd-acc-thumb{
+  height:72px;display:flex;align-items:center;justify-content:center;
+  background:#fff;padding:6px;
+}
+.pd-acc-thumb img{max-height:60px;max-width:100%;object-fit:contain}
+.pd-acc-info{padding:7px 9px 9px}
+.pd-acc-name{font-family:var(--f-b);font-size:10px;font-weight:600;color:var(--t0);line-height:1.35;margin-bottom:3px}
+.pd-acc-price{font-family:var(--f-m);font-size:10px;color:var(--orange)}
+.pd-ctas{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.pd-buy{display:inline-flex;align-items:center}
+/* Video embed */
+.pd-video-wrap{
+  margin:0 0 24px;
+  border-radius:10px;overflow:hidden;
+  border:1.5px solid var(--b1);
+  background:#000;
+}
+.pd-video-label{
+  font-family:var(--f-m);font-size:8px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--orange);
+  padding:10px 14px 0;background:#000;
+}
+.pd-video-frame{
+  position:relative;width:100%;padding-top:56.25%;/* 16:9 */
+}
+.pd-video-frame iframe{
+  position:absolute;inset:0;width:100%;height:100%;border:none;
+}
+.pd-video-title-bar{
+  font-family:var(--f-b);font-size:11px;color:#888;
+  padding:8px 14px;background:#000;line-height:1.4;
+}
+.pd-reset-btn{
+  background:none;border:none;cursor:pointer;
+  font-family:var(--f-m);font-size:10px;letter-spacing:.14em;
+  color:var(--t2);text-transform:uppercase;
+  transition:color .2s;
+}
+.pd-reset-btn:hover{color:var(--t0)}
+/* Mobile */
+@media(max-width:680px){
+  .pd-overlay{padding:0;align-items:flex-end}
+  .pd-modal{
+    grid-template-columns:1fr;
+    border-radius:20px 20px 0 0;
+    max-height:96vh;
+    overflow:hidden;
+  }
+  /* Image panel: compact strip at top, NOT full height */
+  .pd-img-col{
+    position:static;           /* no sticky on mobile */
+    height:auto;max-height:none;
+    border-radius:20px 20px 0 0;
+    padding:20px 24px 16px;
+    flex-direction:row;         /* image + badges side by side */
+    gap:16px;justify-content:flex-start;align-items:center;
+  }
+  .pd-img-wrap{
+    flex:0 0 auto;
+    width:110px;height:110px;min-height:0;
+  }
+  .pd-badges{
+    flex-direction:column;align-items:flex-start;gap:5px;
+  }
+  .pd-badge{font-size:8px;padding:4px 8px}
+  /* Info col scrolls on mobile */
+  .pd-info-col{
+    padding:20px 20px 32px;
+    overflow-y:auto;
+    max-height:calc(96vh - 150px);
+  }
+  /* Tighten up info section */
+  .pd-title{font-size:22px;margin-bottom:10px}
+  .pd-price{font-size:24px}
+  .pd-desc{font-size:13px;margin-bottom:14px}
+  /* Feature icons: keep 3-col but smaller */
+  .pd-icons{gap:6px;margin-bottom:14px}
+  .pd-icon{padding:8px 4px}
+  .pd-icon-img svg{width:22px;height:22px}
+  .pd-icon-lbl{font-size:9px}
+  /* Accordion */
+  .pd-ac-btn{font-size:14px;padding:10px 0}
+  /* Accessories row */
+  .pd-acc-row{gap:8px}
+  .pd-acc-card{min-width:96px;flex:0 0 96px}
+  .pd-acc-thumb{height:60px}
+  .pd-acc-name{font-size:9px}
+  /* Close button: bigger tap target on mobile */
+  .pd-close{width:40px;height:40px;top:10px;right:10px}
+  /* Video */
+  .pd-video-wrap{border-radius:8px}
+}
+
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════ NAV ══════════════════════ -->
+<nav id="nav">
+  <a href="#hero" class="nav-logo"><img src="logo.avif" alt="Hold My Throttle"></a>
+  <ul class="nav-links">
+    <li><a href="#challenge">Feel It</a></li>
+    <li><a href="#features">Product</a></li>
+    <li><a href="#howto">Install</a></li>
+    <li><a href="#bikes">Bikes</a></li>
+  </ul>
+  <a href="#bikes" class="nav-cta">FIND YOUR BIKE →</a>
+  <div class="nav-mob" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+
+<div id="main-wrap">
+<!-- Floating CTA -->
+<a class="float-cta" id="float-cta" href="#challenge" aria-label="Try the throttle demo">
+  FEEL&nbsp;IT
+</a>
+
+<!-- ══════════════════════ HERO ══════════════════════ -->
+<section id="hero">
+
+  <!-- Road perspective scene -->
+  <div class="road-scene" aria-hidden="true">
+    <svg viewBox="0 0 1440 420" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMax slice" overflow="hidden">
+        <g style="animation:rectdash .72s linear infinite;animation-delay:0s">
+          <rect x="715" y="-52" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="0" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="52" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="104" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="156" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="208" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="260" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="312" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="364" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+          <rect x="715" y="416" width="10" height="28" rx="2" fill="rgba(10,10,18,.26)"/>
+        </g>
+        <!-- Solid edge lines — lane boundaries, no animation -->
+        <line x1="660" y1="0" x2="660" y2="420" stroke="rgba(10,10,18,.09)" stroke-width="1.5"/>
+        <line x1="780" y1="0" x2="780" y2="420" stroke="rgba(10,10,18,.09)" stroke-width="1.5"/>
+    </svg>
+  </div>
+
+  <!-- Scroll cue -->
+  <div class="scroll-cue" aria-hidden="true">
+    <div class="scroll-cue-line"></div>
+    <span class="scroll-cue-txt">scroll</span>
+  </div>
+
+  <!-- Content -->
+  <div class="hero-content">
+    <div class="hero-left">
+      <div class="eyebrow fi">
+        <span class="eyebrow-text">BYKR Co. — Built by Riders, for Riders</span>
+      </div>
+
+      <div class="hero-logo-wrap"><img src="logo.avif" alt="Hold My Throttle" class="hero-logo-img"></div>
+
+      <p class="hero-body">
+        <strong>Electronic cruise control for your motorcycle.</strong><br>
+        Set your speed once. Release the grip. Feel what every long ride should feel like.
+      </p>
+
+      <div class="hero-actions">
+        <a href="#challenge" class="btn btn-fill">FEEL THE PROBLEM →</a>
+        <a href="#bikes" class="btn btn-ghost" style="background:#fff;color:var(--t0);border-color:rgba(10,10,18,.22)">FIND YOUR BIKE</a>
+      </div>
+
+      <div class="hero-stats">
+        <div><div class="sv" data-count="22" data-final="22+">22+</div><div class="sl">Bike models</div></div>
+        <div><div class="sv" data-count="15999" data-final="₹15,999">₹15,999</div><div class="sl">Starting price</div></div>
+        <div><div class="sv" data-count="0" data-final="0">0</div><div class="sl">Throttle inputs</div></div>
+      </div>
+    </div>
+
+    <!-- Speedometer -->
+    <div class="speedo-wrap" aria-hidden="true">
+      <svg id="speedo" viewBox="0 0 380 380" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="sg"><stop offset="0%" stop-color="rgba(225,6,0,.07)"/><stop offset="100%" stop-color="rgba(225,6,0,0)"/></radialGradient>
+          <filter id="gf3"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="gf7"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+
+        <!-- Outer rings -->
+        <circle cx="190" cy="190" r="178" fill="url(#sg)"/>
+        <circle cx="190" cy="190" r="176" fill="none" stroke="#e8e7e0" stroke-width="1"/>
+        <circle cx="190" cy="190" r="168" fill="none" stroke="#ededea" stroke-width="1"/>
+
+        <!-- Arc track (center 190,190 r=145, 270° sweep) -->
+        <path d="M88 293 A 145 145 0 1 1 293 293" fill="none" stroke="#e0dfd8" stroke-width="7" stroke-linecap="round"/>
+        <!-- Arc fill -->
+        <path id="sa" d="M88 293 A 145 145 0 1 1 293 293" fill="none" stroke="#e10600" stroke-width="7" stroke-linecap="round" stroke-dasharray="0 683" filter="url(#gf3)" style="transition:stroke .5s"/>
+
+        <!-- Ticks -->
+        <line x1="190" y1="28" x2="190" y2="42" stroke="#d4d3cc" stroke-width="2" transform="rotate(0,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="38" stroke="#d4d3cc" stroke-width="1" transform="rotate(30,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="42" stroke="#d4d3cc" stroke-width="2" transform="rotate(60,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="38" stroke="#d4d3cc" stroke-width="1" transform="rotate(90,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="42" stroke="#d4d3cc" stroke-width="2" transform="rotate(120,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="38" stroke="#d4d3cc" stroke-width="1" transform="rotate(150,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="42" stroke="#d4d3cc" stroke-width="2" transform="rotate(180,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="38" stroke="#d4d3cc" stroke-width="1" transform="rotate(210,190,190)"/>
+        <line x1="190" y1="28" x2="190" y2="42" stroke="#d4d3cc" stroke-width="2" transform="rotate(240,190,190)"/>
+
+        <!-- Labels (repositioned for arc center 190,190 r=145) -->
+        <text x="50"  y="312" text-anchor="middle" font-family="Space Mono,monospace" font-size="9" fill="#9090a8">0</text>
+        <text x="56"  y="195" text-anchor="middle" font-family="Space Mono,monospace" font-size="9" fill="#9090a8">40</text>
+        <text x="187" y="38"  text-anchor="middle" font-family="Space Mono,monospace" font-size="9" fill="#9090a8">80</text>
+        <text x="316" y="82"  text-anchor="middle" font-family="Space Mono,monospace" font-size="9" fill="#9090a8">120</text>
+        <text x="330" y="200" text-anchor="middle" font-family="Space Mono,monospace" font-size="9" fill="#9090a8">160</text>
+
+        <!-- Inner decorative ring -->
+        <circle cx="190" cy="190" r="100" fill="none" stroke="#e8e7e0" stroke-width="1"/>
+        <circle cx="190" cy="190" r="88" fill="#ffffff" stroke="#ededea" stroke-width="1"/>
+
+        <!-- Speed number -->
+        <text id="snum" x="190" y="216" text-anchor="middle" font-family="Bebas Neue,sans-serif" font-size="76" fill="#0a0a12">0</text>
+        <text x="190" y="240" text-anchor="middle" font-family="Space Mono,monospace" font-size="9" fill="#9090a8" letter-spacing="3">KM/H</text>
+
+        <!-- Needle -->
+        <g id="sneedle" transform="rotate(-135,190,190)">
+          <!-- Needle: tip at arc, base at y=148 — stays above the speed number -->
+          <polygon points="190,62 188.6,148 191.4,148" fill="#e10600" filter="url(#gf3)"/>
+        </g>
+
+        <!-- Cruise badge -->
+        <g id="scruise" opacity="0" style="transition:opacity .5s">
+          <rect x="118" y="264" width="144" height="22" rx="3" fill="none" stroke="#008040" stroke-width=".8" opacity=".8"/>
+          <circle cx="133" cy="275" r="3.5" fill="#008040"><animate attributeName="opacity" values="1;.3;1" dur="1.6s" repeatCount="indefinite"/></circle>
+          <text x="190" y="279" text-anchor="middle" font-family="Space Mono,monospace" font-size="8" fill="#008040" letter-spacing="4">CRUISE SET</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════ PRODUCT EXPLODED VIEW ════════ -->
+<section id="product">
+  <div class="pr-outer">
+    <div class="pr-track">
+
+      <!-- LEFT: sticky diagram -->
+      <div class="pr-visual">
+        <span class="ap-intro-label" style="margin-bottom:24px">01 — Inside the Kit</span>
+        <svg id="pr-svg" viewBox="0 0 400 320" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="prGlow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+
+          <!-- Connection lines (hidden until exploded) -->
+          <g id="pr-lines">
+            <line id="pr-line-obd" x1="200" y1="160" x2="200" y2="160"
+              stroke="#e10600" stroke-width="1.5" stroke-dasharray="5 4" opacity=".35"
+              style="transition:x2 .8s cubic-bezier(.16,1,.3,1),y2 .8s cubic-bezier(.16,1,.3,1)"/>
+            <line id="pr-line-thr" x1="200" y1="160" x2="200" y2="160"
+              stroke="#e10600" stroke-width="1.5" stroke-dasharray="5 4" opacity=".35"
+              style="transition:x2 .8s cubic-bezier(.16,1,.3,1),y2 .8s cubic-bezier(.16,1,.3,1)"/>
+            <line id="pr-line-sw" x1="200" y1="160" x2="200" y2="160"
+              stroke="#e10600" stroke-width="1.5" stroke-dasharray="5 4" opacity=".35"
+              style="transition:x2 .8s cubic-bezier(.16,1,.3,1),y2 .8s cubic-bezier(.16,1,.3,1)"/>
+          </g>
+
+          <!-- ─ Module (center, always visible) ─ -->
+          <g id="pr-mod" style="transform:translate(200px,160px)">
+            <rect x="-52" y="-34" width="104" height="68" rx="12"
+              fill="#ffffff" stroke="#e10600" stroke-width="2.5"/>
+            <rect x="-52" y="-34" width="104" height="68" rx="12"
+              fill="none" stroke="#e10600" stroke-width="2.5" opacity=".15" filter="url(#prGlow)"/>
+            <text x="0" y="-9" text-anchor="middle" font-family="Bebas Neue,sans-serif" font-size="11" fill="#e10600" letter-spacing="4">HOLD MY</text>
+            <text x="0" y="8" text-anchor="middle" font-family="Bebas Neue,sans-serif" font-size="11" fill="#e10600" letter-spacing="4">THROTTLE</text>
+            <!-- connector nodes -->
+            <circle cx="-52" cy="-12" r="4" fill="#e10600"/>
+            <circle cx="-52" cy="12" r="4" fill="#e0dfd8"/>
+            <circle cx="52" cy="0" r="4" fill="#e10600"/>
+            <circle cx="0" cy="-34" r="4" fill="#e10600"/>
+            <!-- status LEDs -->
+            <circle cx="-16" cy="24" r="3" fill="#e10600" opacity=".8"/>
+            <circle cx="0" cy="24" r="3" fill="#e0dfd8"/>
+            <circle cx="16" cy="24" r="3" fill="#008040" opacity=".7"/>
+          </g>
+
+          <!-- ─ OBD Reader (explodes to lower-left) ─ -->
+          <g id="pr-obd" style="transform:translate(200px,160px);transition:transform .85s cubic-bezier(.16,1,.3,1)">
+            <rect x="-34" y="-22" width="68" height="44" rx="8"
+              fill="#f0efe9" stroke="#c0bfba" stroke-width="1.5"/>
+            <text x="0" y="2" text-anchor="middle" font-family="Space Mono,monospace" font-size="8" fill="#505068" letter-spacing="2">OBD-II</text>
+            <!-- connector pins -->
+            <rect x="-20" y="16" width="40" height="10" rx="2" fill="#d8d7d0" stroke="#b8b7b0" stroke-width="1"/>
+            <rect x="-14" y="18" width="5" height="6" rx="1" fill="#9090a8"/>
+            <rect x="-5" y="18" width="5" height="6" rx="1" fill="#9090a8"/>
+            <rect x="4" y="18" width="5" height="6" rx="1" fill="#9090a8"/>
+            <!-- floating label (visible when exploded) -->
+            <text id="pr-obd-lbl" class="pr-comp-label" x="0" y="38" text-anchor="middle">SPEED FEED</text>
+          </g>
+
+          <!-- ─ Throttle Module (explodes to right) ─ -->
+          <g id="pr-thr" style="transform:translate(200px,160px);transition:transform .85s cubic-bezier(.16,1,.3,1) .08s">
+            <!-- housing -->
+            <rect x="-34" y="-24" width="68" height="48" rx="10"
+              fill="#f0efe9" stroke="#c0bfba" stroke-width="1.5"/>
+            <!-- motor cylinder -->
+            <ellipse cx="0" cy="0" rx="18" ry="14" fill="#e0dfd8" stroke="#b8b7b0" stroke-width="1"/>
+            <ellipse cx="0" cy="0" rx="10" ry="7" fill="#d0cfc8"/>
+            <!-- shaft -->
+            <rect x="16" y="-3" width="18" height="6" rx="3" fill="#c0bfba"/>
+            <!-- floating label -->
+            <text id="pr-thr-lbl" class="pr-comp-label" x="0" y="-32" text-anchor="middle">THROTTLE HOLD</text>
+          </g>
+
+          <!-- ─ Handlebar Switch (explodes upward) ─ -->
+          <g id="pr-sw" style="transform:translate(200px,160px);transition:transform .85s cubic-bezier(.16,1,.3,1) .16s">
+            <!-- pill body -->
+            <rect x="-46" y="-18" width="92" height="36" rx="18"
+              fill="#f0efe9" stroke="#c0bfba" stroke-width="1.5"/>
+            <!-- SET button (orange, active) -->
+            <circle cx="-24" cy="0" r="10" fill="#e10600"/>
+            <text x="-24" y="4" text-anchor="middle" font-family="Space Mono,monospace" font-size="6" fill="#fff" letter-spacing=".5">SET</text>
+            <!-- RESUME button -->
+            <circle cx="0" cy="0" r="10" fill="#e0dfd8" stroke="#c0bfba" stroke-width="1"/>
+            <text x="0" y="4" text-anchor="middle" font-family="Space Mono,monospace" font-size="5" fill="#9090a8" letter-spacing=".5">RES</text>
+            <!-- CANCEL button -->
+            <circle cx="24" cy="0" r="10" fill="#e0dfd8" stroke="#c0bfba" stroke-width="1"/>
+            <text x="24" y="4" text-anchor="middle" font-family="Space Mono,monospace" font-size="5" fill="#9090a8" letter-spacing=".5">CXL</text>
+            <!-- clamp indicator -->
+            <rect x="-2" y="-30" width="4" height="14" rx="2" fill="#d0cfc8"/>
+            <!-- floating label -->
+            <text id="pr-sw-lbl" class="pr-comp-label" x="0" y="-40" text-anchor="middle">CRUISE SWITCH</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- RIGHT: scrolling chapters -->
+      <div class="pr-chapters">
+
+        <div class="pr-ch active" data-ch="0">
+          <span class="pr-ch-tag">The Complete Kit</span>
+          <h3>Three parts.<br>One system.</h3>
+          <p>HMT connects to your bike using ports that already exist — no cutting, no permanent changes. Remove it in an hour. The whole kit ships calibrated for your exact model.</p>
+        </div>
+
+        <div class="pr-ch" data-ch="1">
+          <span class="pr-ch-tag">OBD-II Speed Reader</span>
+          <h3>Speed from<br>the source.</h3>
+          <p>The OBD reader plugs directly into your bike's diagnostic port and streams real-time speed data from the ECU. No wheel sensors. No GPS. Just the data your bike already generates, live.</p>
+        </div>
+
+        <div class="pr-ch" data-ch="2">
+          <span class="pr-ch-tag">Throttle Hold Module</span>
+          <h3>Holds the<br>cable open.</h3>
+          <p>The hold module routes inline through your throttle cable. When cruise is active it maintains exact cable tension electronically — your hand opens completely. Touch the brake and it releases in milliseconds.</p>
+        </div>
+
+        <div class="pr-ch" data-ch="3">
+          <span class="pr-ch-tag">Handlebar Switch</span>
+          <h3>Three buttons.<br>Full control.</h3>
+          <p>SET locks your current speed. RESUME returns you to cruise after braking. CANCEL cuts everything instantly. The switch clamps to your bar — all three within thumb reach, eyes-forward.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="lane-divider" aria-hidden="true"><span class="lane-mark">The Ride</span></div>
+
+<!-- ════════ CHALLENGE + HMT DEMO ════════ -->
+<section id="challenge">
+  <div class="ch-grid">
+
+    <!-- LEFT: copy -->
+    <div class="ch-copy rv">
+
+      <!-- Idle panel -->
+      <div class="ch-panel on" id="p-idle">
+        <div class="tag" style="margin-bottom:14px">01 Feel the Problem</div>
+        <h2 class="ch-h">How long<br>can you<br><span style="color:var(--orange)">hold it?</span></h2>
+        <p class="ch-body">Highway riding means holding the throttle open — every second, every kilometre. Hold the button below and feel exactly what your wrist endures on every long ride.</p>
+        <p class="c-hint">
+          <strong>Desktop</strong> — hold mouse button down<br>
+          <strong>Mobile</strong> — press and hold
+        </p>
+      </div>
+
+      <!-- Result panel -->
+      <div class="ch-panel" id="p-result">
+        <div class="tag" style="margin-bottom:14px">01 Feel the Problem</div>
+        <div class="res-big" id="res-big">0.0<span style="font-size:.45em">s</span></div>
+        <div class="res-sub" id="res-sub">YOU HELD IT FOR</div>
+        <div class="res-fact" id="res-fact">
+          A 4-hour highway ride = <strong>14,400 seconds</strong> of throttle pressure on your wrist. That's what HMT eliminates — entirely.
+        </div>
+        <p class="ch-body" style="font-size:15px">With Hold My Throttle, you press <strong>SET</strong> once. The system handles the rest — forever.</p>
+        <button class="btn btn-fill" id="see-hmt" style="margin-top:4px">SEE IT IN ACTION →</button>
+      </div>
+
+      <!-- HMT demo panel -->
+      <div class="ch-panel" id="p-hmt">
+        <div class="tag" style="margin-bottom:14px">01 — With HMT</div>
+        <h2 class="ch-h" style="font-size:clamp(44px,5.5vw,68px)">You press<br>once.<br><span style="color:var(--orange)">That's it.</span></h2>
+        <p class="ch-body" style="font-size:15px">Cruise is locked at 100 km/h. Hit BRAKE to cancel, then RESUME to return. This is the full cycle — automated, safe, effortless.</p>
+        <p class="c-hint" id="demo-hint">Cruise set at <strong>100 km/h</strong> — try BRAKE then RESUME.</p>
+        <button class="btn btn-ghost btn-sm" id="reset-btn" style="margin-top:20px">↺ Try again</button>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: highway POV -->
+    <div class="rv d2" id="right-panel">
+
+      <div id="road-panel">
+
+        <!-- ── Road perspective SVG ── -->
+        <svg id="rv-road" viewBox="0 0 560 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="rvSky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#020208"/>
+              <stop offset="100%" stop-color="#070714"/>
+            </linearGradient>
+            <linearGradient id="rvRoad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#0d0d0b"/>
+              <stop offset="55%" stop-color="#121210"/>
+              <stop offset="100%" stop-color="#1c1c18"/>
+            </linearGradient>
+            <radialGradient id="rvHz" cx="50%" cy="0%" r="70%">
+              <stop offset="0%" stop-color="rgba(0,210,235,.15)"/>
+              <stop offset="100%" stop-color="transparent"/>
+            </radialGradient>
+            <radialGradient id="rvHeadlight" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="rgba(0,216,245,.035)"/>
+              <stop offset="100%" stop-color="transparent"/>
+            </radialGradient>
+            <radialGradient id="rvGndRef" cx="50%" cy="0%" r="100%">
+              <stop offset="0%" stop-color="rgba(0,216,245,.05)"/>
+              <stop offset="100%" stop-color="transparent"/>
+            </radialGradient>
+            <filter id="rvHzBlur"><feGaussianBlur stdDeviation="18"/></filter>
+            <filter id="rvLineGlow">
+              <feGaussianBlur stdDeviation="1.5" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <clipPath id="rvRoadClip">
+              <polygon points="0,400 215,155 345,155 560,400"/>
+            </clipPath>
+          </defs>
+
+          <!-- Sky -->
+          <rect width="560" height="155" fill="url(#rvSky)"/>
+          <!-- Night horizon glow -->
+          <ellipse cx="280" cy="155" rx="290" ry="70" fill="url(#rvHz)" filter="url(#rvHzBlur)"/>
+
+          <!-- Stars -->
+          <circle cx="70"  cy="28"  r="1"   fill="rgba(255,255,255,.32)"/>
+          <circle cx="155" cy="52"  r="1"   fill="rgba(255,255,255,.22)"/>
+          <circle cx="230" cy="18"  r="1.4" fill="rgba(255,255,255,.18)"/>
+          <circle cx="315" cy="68"  r="1"   fill="rgba(255,255,255,.28)"/>
+          <circle cx="400" cy="36"  r="1"   fill="rgba(255,255,255,.22)"/>
+          <circle cx="480" cy="82"  r="1"   fill="rgba(255,255,255,.18)"/>
+          <circle cx="45"  cy="100" r="1"   fill="rgba(255,255,255,.14)"/>
+          <circle cx="510" cy="112" r="1"   fill="rgba(255,255,255,.18)"/>
+          <circle cx="195" cy="90"  r="1"   fill="rgba(255,255,255,.14)"/>
+          <circle cx="375" cy="108" r="1"   fill="rgba(255,255,255,.18)"/>
+          <circle cx="108" cy="72"  r=".8"  fill="rgba(255,255,255,.2)"/>
+          <circle cx="445" cy="58"  r=".8"  fill="rgba(255,255,255,.18)"/>
+
+          <!-- Oncoming headlights at horizon -->
+          <circle cx="249" cy="159" r="9" fill="rgba(255,195,80,.12)" filter="url(#rvHzBlur)"/>
+          <circle cx="311" cy="159" r="9" fill="rgba(255,195,80,.12)" filter="url(#rvHzBlur)"/>
+          <circle cx="249" cy="159" r="2" fill="rgba(255,220,140,.4)"/>
+          <circle cx="311" cy="159" r="2" fill="rgba(255,220,140,.4)"/>
+
+          <!-- Road surface -->
+          <polygon points="0,400 215,155 345,155 560,400" fill="url(#rvRoad)"/>
+
+          <!-- Headlight illumination cone on road -->
+          <polygon points="190,400 248,155 312,155 370,400" fill="url(#rvHeadlight)" opacity=".7"/>
+
+          <!-- Ground reflection near viewer -->
+          <ellipse cx="280" cy="400" rx="160" ry="18" fill="url(#rvGndRef)" filter="url(#rvHzBlur)"/>
+
+          <!-- Road left edge -->
+          <line x1="0" y1="400" x2="215" y2="155" stroke="rgba(245,240,210,.42)" stroke-width="1.5" filter="url(#rvLineGlow)"/>
+          <!-- Road right edge -->
+          <line x1="560" y1="400" x2="345" y2="155" stroke="rgba(245,240,210,.42)" stroke-width="1.5" filter="url(#rvLineGlow)"/>
+
+          <!-- Shoulder inner lines -->
+          <line x1="55"  y1="400" x2="228" y2="155" stroke="rgba(245,240,210,.14)" stroke-width="1"/>
+          <line x1="505" y1="400" x2="332" y2="155" stroke="rgba(245,240,210,.14)" stroke-width="1"/>
+
+          <!-- Centre dashes (JS drives stroke-dashoffset) -->
+          <g clip-path="url(#rvRoadClip)">
+            <line id="rv-dash1" x1="280" y1="155" x2="280" y2="400"
+              stroke="rgba(245,240,210,.82)" stroke-width="2.5"
+              stroke-dasharray="18 24" stroke-dashoffset="0"/>
+            <line id="rv-dash2" x1="280" y1="155" x2="280" y2="400"
+              stroke="rgba(245,240,210,.2)" stroke-width="1.5"
+              stroke-dasharray="18 24" stroke-dashoffset="-21"/>
+          </g>
+        </svg>
+
+        <!-- Fatigue vignette (JS controls opacity) -->
+        <div class="rv-vignette" id="rv-vignette"></div>
+
+        <!-- HUD top bar -->
+        <div class="rv-hud">
+          <div class="rv-hud-left">
+            <div class="rv-spd-num" id="ch-spd">0</div>
+            <div class="rv-spd-unit">KM/H</div>
+          </div>
+          <div class="rv-hud-right">
+            <div class="cruise-pill" id="cpill"><div class="cp-dot"></div>CRUISE SET</div>
+            <div class="rv-fat-row">
+              <span class="rv-fat-lbl">FATIGUE</span>
+              <span class="rv-fat-val" id="fat-big">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Centre timer + status message -->
+        <div class="rv-status">
+          <span class="rv-timer" id="d-timer"></span>
+          <span class="rv-dmsg" id="d-msg"></span>
+        </div>
+
+        <!-- ── CHALLENGE: handlebar + hold button ── -->
+        <div class="rv-bottom-panel" id="ch-vis">
+          <!-- Hidden compat elements for ring/indicator JS -->
+          <div class="rv-compat">
+            <svg viewBox="0 0 220 220" width="0" height="0">
+              <circle id="rfill" cx="110" cy="110" r="100"
+                fill="none" stroke="#00d8f5" stroke-width="4"
+                stroke-dasharray="628.318 628.318" stroke-dashoffset="628.318"/>
+            </svg>
+            <div id="fat-f"></div>
+            <div id="ind-run"></div>
+            <div id="ind-fat"></div>
+            <div id="ind-cruise"></div>
+          </div>
+
+          <div class="handlebar-assembly">
+            <div class="hb-arm hb-arm-l"></div>
+            <button class="t-btn" id="t-btn" aria-label="Hold to feel throttle fatigue">
+              <span class="t-main" id="t-label">HOLD</span>
+              <span class="t-sub"  id="t-sub">THROTTLE</span>
+            </button>
+            <div class="hb-arm hb-arm-r"></div>
+          </div>
+          <div class="rv-cue"><span class="rv-cue-text">Hold to feel the fatigue</span></div>
+        </div>
+
+        <!-- ── HMT DEMO: brake / resume controls ── -->
+        <div class="rv-bottom-panel rv-demo-panel" id="hmt-vis" style="display:none">
+          <div class="rv-demo-row">
+            <!-- Speed mini kept for JS compat, visually hidden -->
+            <div class="demo-spd-mini" style="display:none">
+              <div class="dsn" id="dsn">0</div>
+              <div class="ds-unit">KM/H</div>
+            </div>
+            <div class="ctrl-grid" style="flex:1">
+              <button class="ctrl ctrl-brake"  id="brake-btn"  disabled><span>⬛</span> BRAKE</button>
+              <button class="ctrl ctrl-resume" id="resume-btn" disabled><span>▶</span> RESUME</button>
+            </div>
+          </div>
+          <div class="demo-log" id="demo-log">Ramping up to cruise speed…</div>
+        </div>
+
+      </div><!-- /#road-panel -->
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════ FEATURES ════════ -->
+<section id="features">
+  <div class="feat-wrap">
+    <div class="feat-inner">
+
+      <!-- LEFT: sticky intro -->
+      <div class="feat-intro" data-ap="fade" data-ap-d="1">
+        <span class="ap-intro-label">02 — The Product</span>
+        <h2>One device.<br><span style="color:var(--orange)">Your exact</span><br>bike.</h2>
+        <p style="font-size:16px;color:var(--t1);line-height:1.75;margin-top:16px">Every HMT unit is configured for your specific model — tuned to its throttle geometry, OBD parameters and ECU behaviour. Not a generic solution.</p>
+      </div>
+
+      <!-- RIGHT: scrolling cards -->
+      <div class="feat-grid">
+        <div class="fc" data-ap="up" data-ap-d="1"><div class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2" x2="8" y2="7"/><line x1="16" y1="2" x2="16" y2="7"/><path d="M5 7h14v3a7 7 0 01-14 0V7z"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></div><h3>Plug &amp; Play</h3><p>No wire cutting. No permanent modifications. Installs in under an hour and removes anytime.</p></div>
+        <div class="fc" data-ap="up" data-ap-d="2"><div class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.05 11a9 9 0 1117.9 0"/><line x1="12" y1="12" x2="15.2" y2="7.6"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><line x1="7" y1="15" x2="8.5" y2="13.4"/><line x1="17" y1="15" x2="15.5" y2="13.4"/><line x1="5.5" y1="11" x2="7.5" y2="11"/><line x1="16.5" y1="11" x2="18.5" y2="11"/><line x1="12" y1="4" x2="12" y2="6"/></svg></div><h3>OBD-II Speed Feed</h3><p>Live speed data direct from your ECU. No wheel sensors or extra hardware required.</p></div>
+        <div class="fc" data-ap="up" data-ap-d="3"><div class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s-8-3.6-8-10V5l8-3 8 3v7c0 6.4-8 10-8 10z"/><line x1="9" y1="12" x2="15" y2="12"/></svg></div><h3>Auto-Cancel on Brake</h3><p>Touch the brake and cruise disengages in milliseconds. Safety is never compromised.</p></div>
+        <div class="fc" data-ap="up" data-ap-d="4"><div class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/><polyline points="10 9 13 12 10 15"/></svg></div><h3>One-Touch Resume</h3><p>Press RESUME after braking and HMT returns to your set cruise speed instantly.</p></div>
+        <div class="fc" data-ap="up" data-ap-d="5"><div class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></div><h3>Bike-Specific Tuning</h3><p>Each unit calibrated for your exact model. Precision throttle response, every time.</p></div>
+        <div class="fc" data-ap="up" data-ap-d="6"><div class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3c-3.3 3.2-5 6-5 9s1.7 5.8 5 9"/><path d="M12 3c3.3 3.2 5 6 5 9s-1.7 5.8-5 9"/></svg></div><h3>Ships Worldwide</h3><p>Global delivery. No-Cost EMI available at checkout with code <strong>NOCOSTEMI</strong>.</p></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════ HOW IT WORKS ════════ -->
+<section id="howto">
+  <div class="hw-wrap">
+    <div data-ap="up">
+      <span class="ap-intro-label">03 — Installation</span>
+      <h2>Four steps.<br><span style="color:var(--orange)">Then just ride.</span></h2>
+    </div>
+    <div class="steps-wrap">
+      <div class="steps">
+        <div class="st" data-ap="up" data-ap-d="1"><div class="st-n">01</div><h3>OBD Connect</h3><p>Plug HMT into your bike's OBD-II diagnostic port. Live speed from your ECU — no extra sensors.</p></div>
+        <div class="st" data-ap="up" data-ap-d="2"><div class="st-n">02</div><h3>Throttle Route</h3><p>Route the module through your throttle cable assembly. No cutting, no splicing. Completely reversible.</p></div>
+        <div class="st" data-ap="up" data-ap-d="3"><div class="st-n">03</div><h3>Mount Switch</h3><p>The 3-button switch clamps to your handlebar. SET, RESUME and CANCEL — all within thumb reach.</p></div>
+        <div class="st" data-ap="up" data-ap-d="4"><div class="st-n">04</div><h3>Set & Cruise</h3><p>Hit your speed. Press SET. Open your hand. HMT holds the throttle electronically from here.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════ BIKES ════════ -->
+<section id="bikes">
+  <div class="bk-wrap">
+    <div data-ap="up">
+      <span class="ap-intro-label">04 — Compatible Bikes</span>
+      <h2>Find your<br><span style="color:var(--orange)">machine.</span></h2>
+      <p class="bk-sub">22+ models across all major manufacturers. Every unit configured and calibrated for your exact bike's throttle and OBD parameters.</p>
+    </div>
+    <div class="bk-search-wrap" data-ap="fade">
+      <input type="search" id="bk-search" class="bk-search"
+        placeholder="Search model or brand…" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="bf" data-ap="fade" data-ap-d="1">
+      <button class="bf-b on"  onclick="filterBikes(this,'all')">ALL</button>
+      <button class="bf-b" onclick="filterBikes(this,'ktm')">KTM</button>
+      <button class="bf-b" onclick="filterBikes(this,'bmw')">BMW</button>
+      <button class="bf-b" onclick="filterBikes(this,'tri')">TRIUMPH</button>
+      <button class="bf-b" onclick="filterBikes(this,'re')">ROYAL ENFIELD</button>
+      <button class="bf-b" onclick="filterBikes(this,'baj')">BAJAJ</button>
+      <button class="bf-b" onclick="filterBikes(this,'apr')">APRILIA</button>
+      <button class="bf-b" onclick="filterBikes(this,'hus')">HUSQVARNA</button>
+      <button class="bf-b" onclick="filterBikes(this,'suz')">SUZUKI</button>
+      <button class="bf-b" onclick="filterBikes(this,'hon')">HONDA</button>
+    </div>
+    <div class="bk-count" data-ap="fade">Showing <span id="bkc">21</span> of 21 models</div>
+    <div class="bk-grid" data-ap="up" data-ap-d="2">
+      <div class="bk" data-b="ktm" data-pk="duke-390-gen2"><div class="bk-br">KTM</div><div class="bk-nm">Duke 390 Gen 2</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="ktm" data-pk="rc390"><div class="bk-br">KTM</div><div class="bk-nm">RC 390</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="ktm" data-pk="adv-390-gen2"><div class="bk-br">KTM</div><div class="bk-nm">Adventure 390</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="ktm" data-pk="adv-390x-gen1"><div class="bk-br">KTM</div><div class="bk-nm">Adventure 390X (1st Gen)</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="ktm" data-pk="adv-250-gen2"><div class="bk-br">KTM</div><div class="bk-nm">Adventure 250 (2nd Gen)</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="ktm" data-pk="duke-250"><div class="bk-br">KTM</div><div class="bk-nm">Duke 250</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="ktm" data-pk="enduro-r"><div class="bk-br">KTM</div><div class="bk-nm">390 Enduro R</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="bmw" data-pk="g310gs"><div class="bk-br">BMW</div><div class="bk-nm">G 310 GS</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="bmw" data-pk="bmw-450"><div class="bk-br">BMW</div><div class="bk-nm">BMW 450 GS</div><div class="bk-pr">₹18,999</div></div>
+      <div class="bk" data-b="tri" data-pk="speed-400"><div class="bk-br">TRIUMPH</div><div class="bk-nm">Speed 400</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="tri" data-pk="scrambler-400x"><div class="bk-br">TRIUMPH</div><div class="bk-nm">Scrambler 400 X</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="tri" data-pk="tiger-900"><div class="bk-br">TRIUMPH</div><div class="bk-nm">Tiger 900</div><div class="bk-pr">₹18,999</div></div>
+      <div class="bk" data-b="re" data-pk="himalayan-450"><div class="bk-br">ROYAL ENFIELD</div><div class="bk-nm">Himalayan 450</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="re" data-pk="guerrilla-450"><div class="bk-br">ROYAL ENFIELD</div><div class="bk-nm">Guerrilla 450</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="baj" data-pk="pulsar-ns400z"><div class="bk-br">BAJAJ</div><div class="bk-nm">Pulsar NS400Z</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="baj" data-pk="dominar-400"><div class="bk-br">BAJAJ</div><div class="bk-nm">Dominar 400 MY2025</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="apr" data-pk="rs-457"><div class="bk-br">APRILIA</div><div class="bk-nm">RS 457</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="hus" data-pk="vitpilen-401"><div class="bk-br">HUSQVARNA</div><div class="bk-nm">Vitpilen 401</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="hus" data-pk="vitpilen-250"><div class="bk-br">HUSQVARNA</div><div class="bk-nm">Vitpilen 250</div><div class="bk-pr">₹15,999</div></div>
+      <div class="bk" data-b="suz" data-pk="vstrom-800de"><div class="bk-br">SUZUKI</div><div class="bk-nm">V-Strom 800DE</div><div class="bk-pr">₹18,999</div></div>
+      <div class="bk" data-b="hon" data-pk="transalp-750"><div class="bk-br">HONDA</div><div class="bk-nm">CB750 Transalp</div><div class="bk-pr">₹18,999</div></div>
+      <div class="bk" data-b="_" style="cursor:default;background:var(--bg2)">
+        <div class="bk-br" style="color:var(--t2)">MORE COMING</div>
+        <div class="bk-nm" style="color:var(--t2);font-size:13px">New models added regularly</div>
+        <div class="bk-pr">—</div>
+      </div>
+    </div>
+    <div class="bk-no-results" id="bk-no-results">No bikes match your search</div>
+  </div>
+</section>
+
+
+<div class="lane-divider" aria-hidden="true"><span class="lane-mark">Throttle Up</span></div>
+
+<!-- ════════ CTA ════════ -->
+<section id="cta">
+  <div class="cta-in">
+    <div class="tag" style="margin-bottom:20px;justify-content:center;display:flex" data-ap="fade">05 Get Yours</div>
+    <h2 class="cta-h" data-ap="scale">
+      <span data-word>Stop</span><br>
+      <span data-word style="color:var(--orange)">holding</span><br>
+      <span data-word>back.</span>
+    </h2>
+    <p class="cta-sub" data-ap="up" data-ap-d="2">Your next ride doesn't have to end in fatigue. HMT brings factory-grade cruise control to your motorcycle — at a fraction of the cost.</p>
+    <div class="cta-pr" data-ap="up" data-ap-d="3">Starting from<strong>₹15,999</strong></div>
+    <div class="perks" data-ap="fade" data-ap-d="4">
+      <span class="perk">Worldwide Shipping</span>
+      <span class="perk">No-Cost EMI</span>
+      <span class="perk">Plug & Play</span>
+      <span class="perk">Bike-Specific</span>
+    </div>
+    <div data-ap="up" data-ap-d="5">
+      <a href="#bikes" class="btn btn-fill" style="font-size:15px;padding:16px 44px">FIND YOUR BIKE →</a>
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════ FOOTER ════════ -->
+<footer>
+  <div class="fl"><img src="logo.avif" alt="Hold My Throttle" style="height:20px;width:auto;display:block;filter:invert(1);opacity:.55"></div>
+  <div class="fm">Bengaluru, India — Built by riders, for riders</div>
+  <div class="fr">© 2025 BYKR Co.</div>
+</footer>
+
+</div><!-- /#main-wrap -->
+
+<!-- ════════ PRODUCT PAGE VIEW ════════ -->
+<div id="pp-view" style="display:none" aria-label="Product page">
+
+  <!-- Back bar -->
+  <div class="pp-back-bar">
+    <button class="pp-back-btn" id="pp-back-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+      All Bikes
+    </button>
+    <span class="pp-crumb" id="pp-crumb"></span>
+  </div>
+
+  <!-- 2-col layout -->
+  <div class="pp-layout">
+
+    <!-- Left: image -->
+    <div class="pp-img-col">
+      <div class="pp-img-wrap"><img id="pp-img" src="" alt="" loading="lazy"></div>
+      <div class="pd-badges">
+        <span class="pd-badge">Plug &amp; Play</span>
+        <span class="pd-badge">No Wire Cutting</span>
+        <span class="pd-badge">OEM Connectors</span>
+      </div>
+    </div>
+
+    <!-- Right: info -->
+    <div class="pp-info-col">
+      <div class="pd-eyebrow" id="pp-brand"></div>
+      <h1 class="pp-title" id="pp-title"></h1>
+      <div class="pd-price-row">
+        <span class="pd-price" id="pp-price"></span>
+        <span class="pd-emi" id="pp-emi"></span>
+      </div>
+      <p class="pd-desc" id="pp-desc"></p>
+
+      <!-- Feature icons (reuse pd-icons) -->
+      <div class="pd-icons">
+        <div class="pd-icon"><div class="pd-icon-img"><svg viewBox="0 0 24 24"><path d="M18 3H6a3 3 0 00-3 3v2h18V6a3 3 0 00-3-3z"/><path d="M3 8v8a3 3 0 003 3h12a3 3 0 003-3V8H3z"/><line x1="8" y1="12" x2="8" y2="15"/><line x1="12" y1="12" x2="12" y2="15"/><line x1="16" y1="12" x2="16" y2="15"/></svg></div><div class="pd-icon-lbl">Plug &amp; Play</div></div>
+        <div class="pd-icon"><div class="pd-icon-img"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/><path d="M8 3.5A9 9 0 003.5 8M20.5 8A9 9 0 0016 3.5"/></svg></div><div class="pd-icon-lbl">Brakes &amp; Clutch Disengage</div></div>
+        <div class="pd-icon"><div class="pd-icon-img"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg></div><div class="pd-icon-lbl">OEM Fit Experience</div></div>
+        <div class="pd-icon"><div class="pd-icon-img"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="pd-icon-lbl">Fully Sealed &amp; Waterproof</div></div>
+        <div class="pd-icon"><div class="pd-icon-img"><svg viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/><circle cx="9" cy="12" r="2" fill="currentColor" stroke="none" style="fill:var(--orange)"/></svg></div><div class="pd-icon-lbl">More Comfort &amp; Mileage</div></div>
+        <div class="pd-icon"><div class="pd-icon-img"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="10" rx="3"/><circle cx="8" cy="13" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="16" cy="13" r="2"/><path d="M8 8V6M12 8V5M16 8V6"/></svg></div><div class="pd-icon-lbl">3-Button Switch &amp; LEDs</div></div>
+      </div>
+
+      <!-- Accordions -->
+      <div class="pd-accordion">
+        <div class="pd-ac-item">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">Compatibility<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner" id="pp-compat-body"></div></div>
+        </div>
+        <div class="pd-ac-item">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">Control Options<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner"><ul>
+            <li><strong>SET</strong> — Locks current speed. Throttle opens completely.</li>
+            <li><strong>RES (+)</strong> — Returns to last set speed after braking.</li>
+            <li><strong>CXL (○)</strong> — Instantly cuts cruise. Returns to manual.</li>
+            <li>Auto-disengage on brake or clutch input.</li>
+            <li>Fine-tune: ±1 km/h per press while cruising.</li>
+          </ul></div></div>
+        </div>
+        <div class="pd-ac-item">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">Warranty<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner"><ul>
+            <li>12 months from date of purchase.</li>
+            <li>Covers manufacturing defects and electronic failure.</li>
+            <li>Does not cover physical damage or misinstallation.</li>
+            <li>Warranty claims: store@bykr.co</li>
+          </ul></div></div>
+        </div>
+        <div class="pd-ac-item">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">In the Box<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner"><ul>
+            <li>HMT Control Module (pre-calibrated for your bike)</li>
+            <li>Bike-specific wiring harness with OEM connectors</li>
+            <li>3-button handlebar switch with LED indicators</li>
+            <li>Mounting hardware &amp; zip ties</li>
+            <li>2.5mm Allen key</li>
+            <li>User guide &amp; quick-start card</li>
+            <li>12-month warranty card</li>
+          </ul></div></div>
+        </div>
+      </div>
+
+      <!-- CTA -->
+      <div class="pp-ctas">
+        <a class="btn btn-fill pp-buy" id="pp-buy" href="" target="_blank" rel="noopener">Buy on holdmythrottle.com →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Below fold: video + accessories -->
+  <div class="pp-below">
+
+    <div class="pp-video-wrap" id="pp-video-wrap" style="display:none">
+      <div class="pp-video-label">Installation Tutorial</div>
+      <div class="pd-video-frame">
+        <iframe id="pp-video" src="" frameborder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen></iframe>
+      </div>
+      <div class="pd-video-title-bar" id="pp-video-title"></div>
+    </div>
+
+    <div class="pd-accessories">
+      <div class="pd-acc-lbl">Accessories</div>
+      <div class="pd-acc-row">
+        <a class="pd-acc-card" href="https://www.holdmythrottle.com/product-page/6-pin-obd-2-y-splitter-cable-for-bs6-euro-5-motorcycles" target="_blank" rel="noopener">
+          <div class="pd-acc-thumb"><img src="assets/images/ea3263_655b39d16408452bbbe10f0d36104725~.png" alt="OBD-2 Y-Splitter" loading="lazy"></div>
+          <div class="pd-acc-info"><div class="pd-acc-name">6-Pin OBD-2 Y-Splitter Cable</div><div class="pd-acc-price">₹1,499</div></div>
+        </a>
+        <a class="pd-acc-card" href="https://www.holdmythrottle.com/product-page/3-button-cruise-control-switch" target="_blank" rel="noopener">
+          <div class="pd-acc-thumb"><img src="assets/images/aeb0ad_c6e10dbbc58f4bc39d69c08270c854fe~.png" alt="3 Button Switch" loading="lazy"></div>
+          <div class="pd-acc-info"><div class="pd-acc-name">3 Button Switch Control</div><div class="pd-acc-price">₹3,499</div></div>
+        </a>
+        <a class="pd-acc-card" href="https://www.holdmythrottle.com/product-page/mirror-mount-for-switch-control" target="_blank" rel="noopener">
+          <div class="pd-acc-thumb"><img src="assets/images/aeb0ad_2abe7abb8cce45d09a0cf9a134459dd5~.png" alt="Mirror Mount" loading="lazy"></div>
+          <div class="pd-acc-info"><div class="pd-acc-name">Mirror Mount for Switch</div><div class="pd-acc-price">₹199</div></div>
+        </a>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /#pp-view -->
+
+
+<script>
+/* ═══════════════ HERO SPEEDOMETER ═══════════════ */
+const ARC = 683; // r=145, 270° arc = 145 * (270*π/180) ≈ 683
+const needle = document.getElementById('sneedle');
+const arc    = document.getElementById('sa');
+const snum   = document.getElementById('snum');
+const scruise= document.getElementById('scruise');
+
+function setGauge(s,col){
+  s = Math.max(0,Math.min(160,s));
+  const rot = -135+(s/160)*270;
+  needle.setAttribute('transform',`rotate(${rot},190,190)`);
+  snum.textContent = Math.round(s);
+  arc.setAttribute('stroke-dasharray',`${ARC*s/160} ${ARC}`);
+  if(col) arc.setAttribute('stroke',col);
+}
+
+const hPh=[
+  {d:3000,f:0,  t:100,c:false,col:'#e10600'},
+  {d:200, f:100,t:100,c:false,col:'#e10600'},
+  {d:300, f:100,t:100,c:true, col:'#008040'},
+  {d:4500,f:100,t:100,c:true, col:'#008040'},
+  {d:1400,f:100,t:76, c:false,col:'#e10600'},
+  {d:400, f:76, t:76, c:false,col:'#e10600'},
+  {d:1200,f:76, t:100,c:false,col:'#e10600'},
+  {d:300, f:100,t:100,c:true, col:'#008040'},
+  {d:3500,f:100,t:100,c:true, col:'#008040'},
+];
+let hpi=0,hpts=null,lc=null;
+function ease(t){return t<.5?2*t*t:-1+(4-2*t)*t}
+function heroLoop(ts){
+  if(!hpts)hpts=ts;
+  const p=hPh[hpi],e=ts-hpts,t=Math.min(e/p.d,1),et=ease(t);
+  const wob=(!p.c&&p.f!==p.t)?Math.sin(ts*.005)*1.5:0;
+  setGauge(p.f+(p.t-p.f)*et+wob,p.col);
+  if(p.c!==lc){scruise.style.opacity=p.c?'1':'0';lc=p.c}
+  if(t>=1){hpi=(hpi+1)%hPh.length;hpts=ts}
+  requestAnimationFrame(heroLoop);
+}
+requestAnimationFrame(heroLoop);
+
+
+/* ═══════════════ THROTTLE CHALLENGE ════════════ */
+const RING_C=628.318, MAX_T=8000;
+
+// Elements
+const tBtn    = document.getElementById('t-btn');
+const rfill   = document.getElementById('rfill');
+const chSpd   = document.getElementById('ch-spd');
+const fatBig  = document.getElementById('fat-big');
+const fatFill = document.getElementById('fat-f');
+const dTimer  = document.getElementById('d-timer');
+const dMsg    = document.getElementById('d-msg');
+const tLabel  = document.getElementById('t-label');
+const tSub    = document.getElementById('t-sub');
+
+// Indicator dots (hidden, kept for compat)
+const indRun  = document.getElementById('ind-run');
+const indFat  = document.getElementById('ind-fat');
+const indCruise= document.getElementById('ind-cruise');
+
+// Panels
+const pIdle   = document.getElementById('p-idle');
+const pResult = document.getElementById('p-result');
+const pHmt    = document.getElementById('p-hmt');
+const resBig  = document.getElementById('res-big');
+const resSub  = document.getElementById('res-sub');
+
+// Road view
+const chVis      = document.getElementById('ch-vis');
+const hmtVis     = document.getElementById('hmt-vis');
+const rvVignette = document.getElementById('rv-vignette');
+const roadPanel  = document.getElementById('road-panel');
+const rvDash1    = document.getElementById('rv-dash1');
+const rvDash2    = document.getElementById('rv-dash2');
+
+// HMT demo
+const dsnEl    = document.getElementById('dsn');
+const cpill    = document.getElementById('cpill');
+const brakeBtn = document.getElementById('brake-btn');
+const resumeBtn= document.getElementById('resume-btn');
+const demoLog  = document.getElementById('demo-log');
+
+let state='idle', holdTs=0, raf=null, spd=0, demoSpd=0, dRaf=null;
+const CRUISE=100;
+
+// Road animation state
+let roadSpd=0, dashOff=0, roadRaf=null;
+const DASH_PERIOD=42; // 18+24
+
+function tickRoad(){
+  dashOff=(dashOff+roadSpd*0.009)%DASH_PERIOD;
+  if(rvDash1){
+    rvDash1.style.strokeDashoffset=-dashOff;
+    rvDash2.style.strokeDashoffset=(-dashOff-21);
+  }
+  roadRaf=requestAnimationFrame(tickRoad);
+}
+requestAnimationFrame(tickRoad);
+
+function showPanel(p){[pIdle,pResult,pHmt].forEach(x=>x.classList.remove('on'));p.classList.add('on')}
+
+/* Challenge */
+function startHold(e){
+  if(state!=='idle')return;
+  e.preventDefault();
+  state='holding'; holdTs=performance.now(); spd=0;
+  tBtn.classList.add('on');
+  raf=requestAnimationFrame(tickHold);
+}
+
+function tickHold(ts){
+  if(state!=='holding')return;
+  const el=ts-holdTs, prog=Math.min(el/MAX_T,1);
+
+  // Ring compat (hidden)
+  rfill.style.strokeDashoffset=RING_C*(1-prog);
+  rfill.style.stroke=prog>.72?'#ff2244':prog>.44?'#e10600':'#00d8f5';
+
+  // Speed → drive road
+  const tSpd=Math.min(112,el/3000*112);
+  spd+=(tSpd-spd)*.12;
+  roadSpd=spd;
+  chSpd.textContent=Math.round(spd);
+
+  // Fatigue
+  const pct=Math.round(prog*100);
+  fatFill.style.width=pct+'%';
+  fatBig.textContent=pct+'%';
+  fatBig.style.color=prog>.72?'var(--red)':prog>.44?'var(--orange)':pct<10?'':'var(--cyan)';
+
+  // Vignette (fatigue darkening)
+  rvVignette.style.opacity=Math.pow(prog,1.4)*0.9;
+
+  // Screen shake at high fatigue
+  roadPanel.classList.toggle('shake-hard', prog>0.85);
+  roadPanel.classList.toggle('shake', prog>0.65 && prog<=0.85);
+
+  // Timer
+  dTimer.textContent=(el/1000).toFixed(1)+'s';
+
+  // Messages
+  const msgs=['Hold it…','Keep going…','Fatigue building…','Wrist screaming…','Almost at 8s…'];
+  const mi=Math.min(4,Math.floor(prog*5));
+  dMsg.textContent=msgs[mi];
+  dMsg.style.color=prog>.72?'var(--red)':prog>.44?'var(--orange)':'';
+
+  if(prog>=1){endHold(8);return}
+  raf=requestAnimationFrame(tickHold);
+}
+
+function endHold(forced){
+  if(state!=='holding')return;
+  cancelAnimationFrame(raf);
+  const held=forced??((performance.now()-holdTs)/1000);
+  state='result';
+
+  // Stop fatigue effects
+  rvVignette.style.opacity=0;
+  roadPanel.classList.remove('shake','shake-hard');
+  roadSpd=0;
+
+  tBtn.classList.remove('on');tBtn.classList.add('done');
+  tLabel.textContent=held.toFixed(1)+'s';tSub.textContent='HELD';
+  dTimer.textContent='';dMsg.textContent='';
+
+  resBig.innerHTML=held.toFixed(1)+'<span style="font-size:.45em">s</span>';
+  const msgs=[
+    ['Only '+held.toFixed(1)+'s','A highway ride takes 4+ hours. Imagine that.'],
+    [held.toFixed(1)+'s held','A fraction of a highway hour — multiplied by every ride.'],
+    ['Impressive. '+held.toFixed(1)+'s','Now multiply that by a 4-hour ride. Every. Single. Day.'],
+    ['Full 8 seconds','A 4-hour ride = 1,800 of those. Consecutively.'],
+  ];
+  const mi=held<2?0:held<5?1:held<8?2:3;
+  resSub.textContent=msgs[mi][0].toUpperCase();
+  document.getElementById('res-fact').innerHTML=
+    `<strong>${msgs[mi][1]}</strong><br>A 4-hour highway ride = <strong>14,400 seconds</strong> of throttle pressure. HMT eliminates every single one.`;
+
+  showPanel(pResult);
+}
+
+function cancelHold(){if(state==='holding')endHold()}
+
+tBtn.addEventListener('mousedown',startHold);
+document.addEventListener('mouseup',cancelHold);
+tBtn.addEventListener('mouseleave',cancelHold);
+tBtn.addEventListener('touchstart',startHold,{passive:false});
+tBtn.addEventListener('touchend',e=>{e.preventDefault();cancelHold()},{passive:false});
+tBtn.addEventListener('touchcancel',cancelHold);
+
+
+/* HMT Demo */
+function animTo(target,dur,onDone){
+  const from=demoSpd, t0=performance.now();
+  function loop(ts){
+    const t=Math.min((ts-t0)/dur,1), et=ease(t);
+    demoSpd=from+(target-from)*et;
+    roadSpd=demoSpd;
+    dsnEl.textContent=Math.round(demoSpd);
+    chSpd.textContent=Math.round(demoSpd);
+    if(t<1){dRaf=requestAnimationFrame(loop)}
+    else{demoSpd=target;roadSpd=target;dsnEl.textContent=target;chSpd.textContent=target;if(onDone)onDone()}
+  }
+  if(dRaf)cancelAnimationFrame(dRaf);
+  dRaf=requestAnimationFrame(loop);
+}
+
+function startHmtDemo(){
+  showPanel(pHmt);
+  chVis.style.display='none';
+  hmtVis.style.display='flex';
+  state='hmt-ramp'; demoSpd=0; roadSpd=0;
+  // Reset fatigue + vignette — HMT needs zero effort
+  fatBig.textContent='0%'; fatBig.style.color='';
+  rvVignette.style.opacity=0;
+  roadPanel.classList.remove('shake','shake-hard');
+  dTimer.textContent=''; dMsg.textContent=''; dMsg.style.color='';
+  cpill.classList.remove('on');
+  chSpd.className='rv-spd-num';
+  dsnEl.className='dsn';
+  brakeBtn.disabled=true; resumeBtn.disabled=true;
+  resumeBtn.classList.remove('rdy');
+  demoLog.className='demo-log'; demoLog.textContent='Ramping up to cruise speed…';
+  animTo(CRUISE,2200,()=>{
+    state='hmt-cruise';
+    cpill.classList.add('on');
+    dsnEl.className='dsn cruise';
+    chSpd.className='rv-spd-num cruise-color';
+    brakeBtn.disabled=false;
+    demoLog.className='demo-log ok';
+    demoLog.textContent='Cruise locked at '+CRUISE+' km/h. Zero throttle input.';
+  });
+}
+
+brakeBtn.addEventListener('click',()=>{
+  if(state!=='hmt-cruise')return;
+  state='hmt-brake';
+  cpill.classList.remove('on');
+  dsnEl.className='dsn brake';
+  chSpd.className='rv-spd-num brake-color';
+  brakeBtn.disabled=true; resumeBtn.disabled=true; resumeBtn.classList.remove('rdy');
+  demoLog.className='demo-log brk'; demoLog.textContent='Brake pressed — cruise cancelled.';
+  animTo(28,1400,()=>{
+    setTimeout(()=>{
+      resumeBtn.disabled=false; resumeBtn.classList.add('rdy');
+      dsnEl.className='dsn';
+      chSpd.className='rv-spd-num';
+      demoLog.className='demo-log';
+      demoLog.textContent='Slowed to '+Math.round(demoSpd)+' km/h. Press RESUME →';
+    },600);
+  });
+});
+
+resumeBtn.addEventListener('click',()=>{
+  if(!resumeBtn.classList.contains('rdy'))return;
+  state='hmt-resume';
+  resumeBtn.disabled=true; resumeBtn.classList.remove('rdy');
+  dsnEl.className='dsn';
+  chSpd.className='rv-spd-num';
+  demoLog.className='demo-log'; demoLog.textContent='Resuming to '+CRUISE+' km/h…';
+  animTo(CRUISE,2000,()=>{
+    state='hmt-cruise';
+    cpill.classList.add('on');
+    dsnEl.className='dsn cruise';
+    chSpd.className='rv-spd-num cruise-color';
+    brakeBtn.disabled=false;
+    demoLog.className='demo-log ok';
+    demoLog.textContent='Back at '+CRUISE+' km/h. Cruise re-engaged.';
+  });
+});
+
+document.getElementById('see-hmt').addEventListener('click',startHmtDemo);
+
+document.getElementById('reset-btn').addEventListener('click',()=>{
+  if(dRaf)cancelAnimationFrame(dRaf);
+  state='idle'; spd=0; demoSpd=0; roadSpd=0;
+  tBtn.classList.remove('on','done'); tLabel.textContent='HOLD'; tSub.textContent='THROTTLE';
+  chSpd.textContent='0'; chSpd.className='rv-spd-num';
+  rfill.style.strokeDashoffset=RING_C; rfill.style.stroke='#00d8f5';
+  fatFill.style.width='0%'; fatBig.textContent='0%'; fatBig.style.color='';
+  dTimer.textContent=''; dMsg.textContent=''; dMsg.style.color='';
+  rvVignette.style.opacity=0;
+  roadPanel.classList.remove('shake','shake-hard');
+  cpill.classList.remove('on'); brakeBtn.disabled=true; resumeBtn.disabled=true; resumeBtn.classList.remove('rdy');
+  chVis.style.display=''; hmtVis.style.display='none';
+  showPanel(pIdle);
+});
+
+
+/* ═══════════════ BIKE FILTER + SEARCH ═══════ */
+let activeBrand='all';
+
+function applyBikeFilters(){
+  const q=(document.getElementById('bk-search')?.value||'').trim().toLowerCase();
+  const cards=document.querySelectorAll('.bk');
+  let n=0;
+  cards.forEach(c=>{
+    if(c.dataset.b==='_'){
+      c.classList.toggle('hide',!!q);
+      return;
+    }
+    const brandOk=activeBrand==='all'||c.dataset.b===activeBrand;
+    const searchOk=!q||c.textContent.toLowerCase().includes(q);
+    const show=brandOk&&searchOk;
+    c.classList.toggle('hide',!show);
+    if(show)n++;
+  });
+  document.getElementById('bkc').textContent=n;
+  const noRes=document.getElementById('bk-no-results');
+  if(noRes)noRes.style.display=n===0?'block':'none';
+}
+
+function filterBikes(btn,brand){
+  document.querySelectorAll('.bf-b').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  activeBrand=brand;
+  applyBikeFilters();
+}
+
+// Wire up search input
+const bkSearchEl=document.getElementById('bk-search');
+if(bkSearchEl){
+  bkSearchEl.addEventListener('input',()=>{
+    // Reset brand filter to ALL when searching
+    if(bkSearchEl.value){
+      activeBrand='all';
+      document.querySelectorAll('.bf-b').forEach(b=>b.classList.remove('on'));
+      document.querySelector('.bf-b[onclick*="\'all\'"]')?.classList.add('on');
+    }
+    applyBikeFilters();
+  });
+  // Clear search on Escape
+  bkSearchEl.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){bkSearchEl.value='';applyBikeFilters();}
+  });
+}
+
+
+/* ═══════════════ LEGACY SCROLL REVEAL (.rv) ═ */
+const io=new IntersectionObserver(e=>e.forEach(x=>{
+  if(x.isIntersecting){x.target.classList.add('up');io.unobserve(x.target)}
+}),{threshold:.1});
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+
+
+/* ═══════════════ APPLE SCROLL SYSTEM ════════ */
+
+/* 1. IntersectionObserver for [data-ap] reveals */
+const apObs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.classList.add('ap-in');
+      apObs.unobserve(e.target);
+      // Trigger counter if element has data-count
+      const cnt=e.target.querySelector('[data-count]');
+      if(cnt)runCounter(cnt);
+    }
+  });
+},{threshold:.13});
+document.querySelectorAll('[data-ap]').forEach(el=>apObs.observe(el));
+
+/* Also watch for hero stat counters when hero stats come in view */
+const statObs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.querySelectorAll('[data-count]').forEach(runCounter);
+      statObs.unobserve(e.target);
+    }
+  });
+},{threshold:.5});
+const heroStats=document.querySelector('.hero-stats');
+if(heroStats)statObs.observe(heroStats);
+
+/* 2. Counter animation */
+function runCounter(el){
+  const target=parseInt(el.dataset.count);
+  const finalTxt=el.dataset.final||String(target);
+  if(target===0){el.textContent=finalTxt;return}
+  const dur=1600, start=performance.now();
+  function tick(now){
+    const t=Math.min((now-start)/dur,1);
+    const et=1-Math.pow(1-t,3); // ease out cubic
+    const v=Math.round(et*target);
+    if(target>=10000) el.textContent='₹'+v.toLocaleString('en-IN');
+    else if(target>20) el.textContent=v+'+';
+    else el.textContent=v;
+    if(t<1) requestAnimationFrame(tick);
+    else el.textContent=finalTxt;
+  }
+  requestAnimationFrame(tick);
+}
+
+/* 3. Hero parallax — road moves at 40% scroll speed */
+const roadSceneEl=document.querySelector('.road-scene');
+const heroEl=document.getElementById('hero');
+function onScroll(){
+  const y=window.scrollY;
+  document.getElementById('nav').style.borderBottomColor=
+    y>40?'rgba(10,10,18,.12)':'rgba(10,10,18,.07)';
+  // Parallax on road only while in hero
+  if(roadSceneEl && y<heroEl.offsetHeight){
+    roadSceneEl.style.transform=`translateY(${y*0.38}px)`;
+  }
+  // Steps progress line
+  updateStepsProgress();
+  // Floating CTA
+  updateFloatCta(y);
+}
+window.addEventListener('scroll',onScroll,{passive:true});
+
+/* 4. Steps progress line */
+const stepsFill=document.getElementById('steps-fill');
+const stepsEls=document.querySelectorAll('.st');
+function updateStepsProgress(){
+  if(!stepsFill||!stepsEls.length)return;
+  let visCount=0;
+  stepsEls.forEach(s=>{if(s.classList.contains('ap-in'))visCount++});
+  stepsFill.style.height=(visCount/stepsEls.length*100)+'%';
+}
+
+/* 5. CTA word-reveal is handled by data-ap="scale" → .ap-in + CSS */
+
+/* 6. Floating CTA visibility */
+const floatCta=document.getElementById('float-cta');
+function updateFloatCta(y){
+  if(!floatCta)return;
+  const heroH=heroEl?heroEl.offsetHeight:600;
+  floatCta.classList.toggle('visible', y > heroH*0.55);
+}
+
+/* ═══════════════ PRODUCT EXPLODED VIEW ═══════════════ */
+(function(){
+  const prChapters=document.querySelectorAll('.pr-ch');
+  if(!prChapters.length)return;
+
+  const obdEl =document.getElementById('pr-obd');
+  const thrEl =document.getElementById('pr-thr');
+  const swEl  =document.getElementById('pr-sw');
+  const lineObd=document.getElementById('pr-line-obd');
+  const lineThr=document.getElementById('pr-line-thr');
+  const lineSw =document.getElementById('pr-line-sw');
+  const obdLbl =document.getElementById('pr-obd-lbl');
+  const thrLbl =document.getElementById('pr-thr-lbl');
+  const swLbl  =document.getElementById('pr-sw-lbl');
+
+  // Exploded positions [dx, dy] relative to center (200,160)
+  const positions=[
+    {obd:[0,0],     thr:[0,0],    sw:[0,0],    lines:false},
+    {obd:[-128,78], thr:[0,0],    sw:[0,0],    lines:true},
+    {obd:[-128,78], thr:[128,20], sw:[0,0],    lines:true},
+    {obd:[-128,78], thr:[128,20], sw:[40,-108],lines:true},
+  ];
+
+  function applyState(ch){
+    const p=positions[ch];
+    obdEl.style.transform=`translate(${200+p.obd[0]}px,${160+p.obd[1]}px)`;
+    thrEl.style.transform=`translate(${200+p.thr[0]}px,${160+p.thr[1]}px)`;
+    swEl.style.transform =`translate(${200+p.sw[0]}px,${160+p.sw[1]}px)`;
+    // Animate lines
+    if(lineObd){
+      lineObd.setAttribute('x2',p.obd[0]?String(200+p.obd[0]):'200');
+      lineObd.setAttribute('y2',p.obd[0]?String(160+p.obd[1]):'160');
+      lineObd.style.opacity=p.obd[0]?'.35':'0';
+    }
+    if(lineThr){
+      lineThr.setAttribute('x2',p.thr[0]?String(200+p.thr[0]):'200');
+      lineThr.setAttribute('y2',p.thr[0]?String(160+p.thr[1]):'160');
+      lineThr.style.opacity=p.thr[0]?'.35':'0';
+    }
+    if(lineSw){
+      lineSw.setAttribute('x2',p.sw[0]?String(200+p.sw[0]):'200');
+      lineSw.setAttribute('y2',p.sw[0]?String(160+p.sw[1]):'160');
+      lineSw.style.opacity=p.sw[0]?'.35':'0';
+    }
+    // Labels
+    if(obdLbl) obdLbl.classList.toggle('show', ch>=1);
+    if(thrLbl) thrLbl.classList.toggle('show', ch>=2);
+    if(swLbl)  swLbl.classList.toggle('show',  ch>=3);
+  }
+
+  // Initial state
+  applyState(0);
+
+  const prObs=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        const ch=parseInt(e.target.dataset.ch);
+        prChapters.forEach(c=>c.classList.remove('active'));
+        e.target.classList.add('active');
+        applyState(ch);
+      }
+    });
+  },(window.innerWidth<=1024
+      ? {threshold:0,rootMargin:'-56% 0px -40% 0px'}   /* thin trigger line just below the pinned diagram */
+      : {threshold:0.45,rootMargin:'-15% 0px -15% 0px'}));
+
+  prChapters.forEach(ch=>prObs.observe(ch));
+})();
+/* ═══════════════ PRODUCT PAGE ROUTER ═══════════════ */
+(function(){
+  const mainWrap = document.getElementById('main-wrap');
+  const ppView   = document.getElementById('pp-view');
+  const ppBack   = document.getElementById('pp-back-btn');
+  const ppCrumb  = document.getElementById('pp-crumb');
+  const ppImg    = document.getElementById('pp-img');
+  const ppBrand  = document.getElementById('pp-brand');
+  const ppTitle  = document.getElementById('pp-title');
+  const ppPrice  = document.getElementById('pp-price');
+  const ppEmi    = document.getElementById('pp-emi');
+  const ppDesc   = document.getElementById('pp-desc');
+  const ppBuy    = document.getElementById('pp-buy');
+  const ppCompatBody  = document.getElementById('pp-compat-body');
+  const ppVideoWrap   = document.getElementById('pp-video-wrap');
+  const ppVideoFrame  = document.getElementById('pp-video');
+  const ppVideoTitle  = document.getElementById('pp-video-title');
+
+  function showProductPage(pk){
+    const d = BIKE_DATA[pk];
+    if(!d){ showMain(); return; }
+
+    // Populate
+    ppImg.src   = d.img;
+    ppImg.alt   = d.brand + ' ' + d.name;
+    ppBrand.textContent = d.brand.toUpperCase();
+    ppTitle.textContent = d.name;
+    ppPrice.textContent = d.price;
+    ppEmi.textContent   = d.emi;
+    ppDesc.textContent  = d.desc;
+    ppBuy.href          = d.url;
+    ppCrumb.textContent = d.brand.toUpperCase() + ' / ' + d.name.toUpperCase();
+
+    // Compatibility
+    if(ppCompatBody){
+      ppCompatBody.innerHTML = d.compat
+        ? '<p>' + d.compat + '</p>'
+        : '<p>Compatible with ' + d.brand + ' ' + d.name + '. Plug &amp; play via OBD-II port.</p>';
+    }
+
+    // Video
+    if(d.vid){
+      ppVideoFrame.src = 'https://www.youtube.com/embed/' + d.vid + '?rel=0';
+      if(ppVideoTitle) ppVideoTitle.textContent = d.vidTitle || '';
+      ppVideoWrap.style.display = '';
+    } else {
+      ppVideoWrap.style.display = 'none';
+      ppVideoFrame.src = '';
+    }
+
+    // Reset accordions
+    ppView.querySelectorAll('.pd-ac-item.open').forEach(i=>i.classList.remove('open'));
+
+    // Switch views
+    mainWrap.style.display = 'none';
+    ppView.style.display   = 'block';
+    document.title = d.name + ' — Hold My Throttle';
+    window.scrollTo(0, 0);
+  }
+
+  function showMain(){
+    // Stop video
+    if(ppVideoFrame) ppVideoFrame.src = '';
+    ppView.style.display   = 'none';
+    mainWrap.style.display = '';
+    document.title = 'Hold My Throttle — Electronic Cruise Control';
+  }
+
+  function handleRoute(){
+    const pk = location.hash.replace(/^#/, '');
+    if(pk && BIKE_DATA[pk]) showProductPage(pk);
+    else showMain();
+  }
+
+  // Back button
+  if(ppBack){
+    ppBack.addEventListener('click', ()=>{
+      history.back();
+      // fallback if no history
+      setTimeout(()=>{ if(location.hash) location.hash = ''; }, 80);
+    });
+  }
+
+  window.addEventListener('hashchange', handleRoute);
+  handleRoute(); // run on initial load
+})();
+</script>
+<!-- ════════ PRODUCT DETAIL MODAL ════════ -->
+<div class="pd-overlay" id="pd-overlay" role="dialog" aria-modal="true" aria-label="Product detail">
+  <div class="pd-modal" id="pd-modal">
+    <button class="pd-close" id="pd-close" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="pd-img-col">
+      <div class="pd-img-wrap">
+        <img class="pd-img" id="pd-img" src="" alt="" loading="lazy">
+      </div>
+      <div class="pd-badges">
+        <span class="pd-badge">Plug &amp; Play</span>
+        <span class="pd-badge">No Wire Cutting</span>
+        <span class="pd-badge">OEM Connectors</span>
+      </div>
+    </div>
+    <div class="pd-info-col">
+      <div class="pd-eyebrow" id="pd-brand"></div>
+      <h2 class="pd-title" id="pd-title"></h2>
+      <div class="pd-price-row">
+        <span class="pd-price" id="pd-price"></span>
+        <span class="pd-emi" id="pd-emi"></span>
+      </div>
+      <p class="pd-desc" id="pd-desc"></p>
+      <!-- Feature icons -->
+      <div class="pd-icons">
+        <div class="pd-icon">
+          <div class="pd-icon-img"><svg viewBox="0 0 24 24"><path d="M18 3H6a3 3 0 00-3 3v2h18V6a3 3 0 00-3-3z"/><path d="M3 8v8a3 3 0 003 3h12a3 3 0 003-3V8H3z"/><line x1="8" y1="12" x2="8" y2="15"/><line x1="12" y1="12" x2="12" y2="15"/><line x1="16" y1="12" x2="16" y2="15"/></svg></div>
+          <div class="pd-icon-lbl">Plug &amp; Play</div>
+        </div>
+        <div class="pd-icon">
+          <div class="pd-icon-img"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/><path d="M8 3.5A9 9 0 003.5 8M20.5 8A9 9 0 0016 3.5"/></svg></div>
+          <div class="pd-icon-lbl">Brakes &amp; Clutch Disengage</div>
+        </div>
+        <div class="pd-icon">
+          <div class="pd-icon-img"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg></div>
+          <div class="pd-icon-lbl">OEM Fit Experience</div>
+        </div>
+        <div class="pd-icon">
+          <div class="pd-icon-img"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+          <div class="pd-icon-lbl">Fully Sealed &amp; Waterproof</div>
+        </div>
+        <div class="pd-icon">
+          <div class="pd-icon-img"><svg viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/><circle cx="9" cy="12" r="2" fill="currentColor" stroke="none" style="fill:var(--orange)"/></svg></div>
+          <div class="pd-icon-lbl">More Comfort &amp; Mileage</div>
+        </div>
+        <div class="pd-icon">
+          <div class="pd-icon-img"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="10" rx="3"/><circle cx="8" cy="13" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="16" cy="13" r="2"/><path d="M8 8V6M12 8V5M16 8V6"/></svg></div>
+          <div class="pd-icon-lbl">3-Button Switch &amp; LEDs</div>
+        </div>
+      </div>
+
+      <!-- Accordions -->
+      <div class="pd-accordion">
+        <div class="pd-ac-item" id="pd-ac-compat">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">Compatibility<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner" id="pd-compat-body"></div></div>
+        </div>
+        <div class="pd-ac-item">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">Control Options<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner"><ul>
+            <li><strong>SET</strong> — Locks current speed. Throttle opens completely.</li>
+            <li><strong>RES (+)</strong> — Returns to last set speed after braking.</li>
+            <li><strong>CXL (○)</strong> — Instantly cuts cruise. Returns to manual.</li>
+            <li>Auto-disengage on brake or clutch input.</li>
+            <li>Fine-tune: ±1 km/h per press while cruising.</li>
+          </ul></div></div>
+        </div>
+        <div class="pd-ac-item">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">Warranty<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner"><ul>
+            <li>12 months from date of purchase.</li>
+            <li>Covers manufacturing defects and electronic failure.</li>
+            <li>Does not cover physical damage or misinstallation.</li>
+            <li>Warranty claims: store@bykr.co</li>
+          </ul></div></div>
+        </div>
+        <div class="pd-ac-item">
+          <button class="pd-ac-btn" onclick="toggleAcc(this)">In the Box<span class="pd-ac-icon">+</span></button>
+          <div class="pd-ac-body"><div class="pd-ac-inner"><ul>
+            <li>HMT Control Module (pre-calibrated for your bike)</li>
+            <li>Bike-specific wiring harness with OEM connectors</li>
+            <li>3-button handlebar switch with LED indicators</li>
+            <li>Mounting hardware &amp; zip ties</li>
+            <li>2.5mm Allen key</li>
+            <li>User guide &amp; quick-start card</li>
+            <li>12-month warranty card</li>
+          </ul></div></div>
+        </div>
+      </div>
+
+      <!-- Accessories -->
+      <div class="pd-accessories">
+        <div class="pd-acc-lbl">Accessories</div>
+        <div class="pd-acc-row">
+          <a class="pd-acc-card" href="https://www.holdmythrottle.com/product-page/6-pin-obd-2-y-splitter-cable-for-bs6-euro-5-motorcycles" target="_blank" rel="noopener">
+            <div class="pd-acc-thumb"><img src="assets/images/ea3263_655b39d16408452bbbe10f0d36104725~.png" alt="OBD-2 Y-Splitter" loading="lazy"></div>
+            <div class="pd-acc-info"><div class="pd-acc-name">6-Pin OBD-2 Y-Splitter Cable</div><div class="pd-acc-price">₹1,499</div></div>
+          </a>
+          <a class="pd-acc-card" href="https://www.holdmythrottle.com/product-page/3-button-cruise-control-switch" target="_blank" rel="noopener">
+            <div class="pd-acc-thumb"><img src="assets/images/aeb0ad_c6e10dbbc58f4bc39d69c08270c854fe~.png" alt="3 Button Switch" loading="lazy"></div>
+            <div class="pd-acc-info"><div class="pd-acc-name">3 Button Switch Control</div><div class="pd-acc-price">₹3,499</div></div>
+          </a>
+          <a class="pd-acc-card" href="https://www.holdmythrottle.com/product-page/mirror-mount-for-switch-control" target="_blank" rel="noopener">
+            <div class="pd-acc-thumb"><img src="assets/images/aeb0ad_2abe7abb8cce45d09a0cf9a134459dd5~.png" alt="Mirror Mount" loading="lazy"></div>
+            <div class="pd-acc-info"><div class="pd-acc-name">Mirror Mount for Switch</div><div class="pd-acc-price">₹199</div></div>
+          </a>
+        </div>
+      </div>
+
+      <div class="pd-video-wrap" id="pd-video-wrap" style="display:none">
+        <div class="pd-video-label">Installation Tutorial</div>
+        <div class="pd-video-frame">
+          <iframe id="pd-video" src="" frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen></iframe>
+        </div>
+        <div class="pd-video-title-bar" id="pd-video-title"></div>
+      </div>
+      <div class="pd-ctas">
+        <a class="pd-buy btn btn-fill" id="pd-buy" href="" target="_blank" rel="noopener">Buy Now →</a>
+        <button class="pd-reset-btn" id="pd-reset-btn">← Back to bikes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════ PRODUCT DETAIL DATA ═══════════════ */
+const BIKE_DATA = {
+  "duke-390-gen2": {
+    brand:"KTM", name:"Duke 390 Gen 2", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/ktm-duke-390-hold-my-throttle",
+    img:"assets/images/ea3263_87299f8abbd149e8a1ff39b9a9167fe3~.png",
+    vid:"wjeEM2FtkHQ", vidTitle:"Installing Cruise Control on KTM Duke 390 (2024)",
+    compat:"KTM Duke 390 Gen 2 (2023 onwards). Confirmed compatible with all BS6 variants including standard and Metzeler edition.",
+    desc:"The Duke 390 Gen 2 is built for riders who push hard — but long highway stretches shouldn't mean white-knuckle throttle holding. HMT locks your cruise speed electronically through the OBD II port, so you arrive fresher and ride harder."
+  },
+  "rc390": {
+    brand:"KTM", name:"RC 390 (MY2017+)", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/ktm-rc390-my17-hmt",
+    img:"assets/images/ea3263_8180b847108a44ffbcfddb7afc385e46~.png",
+    compat:"KTM RC 390 MY2017 and later. All BS6 and Euro 5 variants confirmed. Not compatible with pre-2017 RC 390.",
+    desc:"The RC 390's tucked-in riding position is track-perfect but punishing over distance. HMT eliminates sustained throttle grip so your wrist recovers between corners. Designed specifically for MY2017 and later."
+  },
+  "adv-390-gen2": {
+    brand:"KTM", name:"Adventure 390 X (Gen 2)", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/adv-390-hmt",
+    img:"assets/images/ea3263_fa9bb1d696b648e3baa156d82518c33c~.png",
+    compat:"KTM Adventure 390 X Gen 2 (2022 onwards). Includes all standard, Rally and Off-Road variants.",
+    desc:"The ADV 390 X Gen 2 was built for long-distance. HMT makes it even better — cruise control tuned to the exact OBD parameters of your bike, so every highway stretch is genuinely effortless."
+  },
+  "adv-390x-gen1": {
+    brand:"KTM", name:"Adventure 390X (1st Gen)", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/1st-gen-adv-390x-hold-my-throttle",
+    img:"assets/images/ea3263_cb42b04de9e14cccbe2e2efe8718a181~.png",
+    compat:"KTM Adventure 390X 1st Gen (2017–2021). Calibrated for 1st gen OBD profile. If you own a 2022+ bike, see Adventure 390 X Gen 2 listing.",
+    desc:"First-gen ADV 390X owners get the same highway-grade cruise control as the latest models. Configured precisely for the 1st gen OBD profile — plug into the diagnostic port under the seat and you're set."
+  },
+  "adv-250-gen2": {
+    brand:"KTM", name:"Adventure 250 (2nd Gen)", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/2nd-gen-adv-250-hold-my-throttle",
+    img:"assets/images/ea3263_b37e75bbab134ca7bb4ef08c7c2b79a6~.png",
+    compat:"KTM Adventure 250 2nd Gen (2022 onwards). All variants confirmed compatible.",
+    desc:"The 250 Adventure's 248cc single loves the highway more than its displacement suggests. HMT makes those long straights sustainable — zero throttle fatigue, one button to set and forget."
+  },
+  "duke-250": {
+    brand:"KTM", name:"Duke 250 Gen 3", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/duke-250-hmt",
+    img:"assets/images/ea3263_a7a1adea6dd14c65aefda77c29e66eea~.png",
+    compat:"KTM Duke 250 Gen 3 (2022 onwards). All BS6 variants confirmed.",
+    desc:"Don't let the 250 badge fool you — this bike handles highways remarkably well. HMT Gen 3 is calibrated to the Duke 250's throttle response, delivering smooth cruise control without any jerkiness at lower power outputs."
+  },
+  "enduro-r": {
+    brand:"KTM", name:"390 Enduro R", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/ktm-390-enduro-r-hold-my-throttle",
+    img:"assets/images/aeb0ad_6b6c6bae37414cb2abef26df2071d7fa~.png",
+    compat:"KTM 390 Enduro R (all years). All variants confirmed compatible.",
+    desc:"The 390 Enduro R tears up trails and eats highways between them. HMT keeps your grip fresh for the off-road sections that matter — cruise control on-road means full energy reserved for the dirt."
+  },
+  "g310gs": {
+    brand:"BMW", name:"G 310 GS", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/g-310-gs-hmt",
+    img:"assets/images/ea3263_16b24da34c1b4e479ac19260360b2822~.png",
+    compat:"BMW G 310 GS (all BS6 variants). Compatible with both standard and Adventure Pro trims.",
+    desc:"The G 310 GS is BMW's gateway adventure bike — light, capable, and now cruise-control equipped. HMT integrates cleanly with the 310's OBD system, giving you factory-grade highway comfort at a fraction of the cost."
+  },
+  "bmw-450": {
+    brand:"BMW", name:"450 GS", price:"₹18,999", emi:"No Cost EMI from ₹6,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/bmw-450",
+    img:"assets/images/ea3263_65de6f6ef84e48fbbd62a35a8a0ced0b~.png",
+    compat:"BMW 450 GS (2024 onwards). Calibrated for the 450cc TPI engine OBD mapping.",
+    desc:"The BMW 450 GS is purpose-built for long-distance adventure. HMT extends that capability with precise electronic cruise control — configured to the 450's unique OBD mapping for buttery smooth speed hold on any surface."
+  },
+  "speed-400": {
+    brand:"Triumph", name:"Speed 400", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/speed-400-hmt",
+    img:"assets/images/aeb0ad_9427f99f7cdf4536964056be653bda1d~.png",
+    vid:"4uiP_Qvs-78", vidTitle:"Installing HMT on Triumph Speed 400 / Scrambler 400X",
+    compat:"Triumph Speed 400 (2023 onwards). All standard and special edition variants confirmed.",
+    desc:"The Speed 400's upright ergonomics beg to be on the highway. HMT makes those stretches effortless — tuned to the Triumph OBD protocol, integrating like it was always part of the bike."
+  },
+  "scrambler-400x": {
+    brand:"Triumph", name:"Scrambler 400 X / XC", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/scrambler-400-x-hmt",
+    img:"assets/images/ea3263_d8fbd2a926ef447bb50804de91200289~.png",
+    vid:"4uiP_Qvs-78", vidTitle:"Installing HMT on Triumph Scrambler 400X / Speed 400",
+    compat:"Triumph Scrambler 400 X and 400 XC (2023 onwards). Same wiring harness fits both X and XC variants.",
+    desc:"The Scrambler 400 X is equally at home on tarmac and light trails. HMT's cruise control keeps highway legs relaxed — more energy for the adventure that follows. Compatible with both X and XC variants."
+  },
+  "tiger-900": {
+    brand:"Triumph", name:"Tiger 900", price:"₹18,999", emi:"No Cost EMI from ₹6,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/triumph-900-hold-my-throttle",
+    img:"assets/images/ea3263_7238beeac0324fd386d97f350aafbe8f~.png",
+    compat:"Triumph Tiger 900, Tiger 900 GT, GT Pro, Rally, and Rally Pro (all years). All 888cc triple variants confirmed.",
+    desc:"The Tiger 900 already has the range and capability for epic journeys. HMT adds the cruise control those journeys deserve — precisely mapped to the Tiger's 888cc triple and OBD system for seamless integration."
+  },
+  "himalayan-450": {
+    brand:"Royal Enfield", name:"Himalayan 450", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/re-himalayan-450",
+    img:"assets/images/aeb0ad_062f957ba3f04915b5348625aa191141~.png",
+    vid:"Oz9HAvPT3sM", vidTitle:"Installing Electronic Cruise Control on RE Himalayan 450",
+    compat:"Royal Enfield Himalayan 450 (2023 onwards). All colour variants and Hanle edition confirmed compatible.",
+    desc:"The Himalayan 450 is built for the long haul — Leh Manali, trans-Rajasthan, the works. HMT makes those multi-day highway stretches truly restful, tuned to the Sherco 452cc engine's OBD parameters."
+  },
+  "guerrilla-450": {
+    brand:"Royal Enfield", name:"Guerrilla 450", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/re-guerrilla-450",
+    img:"assets/images/ea3263_b43e09c031c647adaaf1d2def4b8d7bb~.webp",
+    compat:"Royal Enfield Guerrilla 450 (2024 onwards). All variants confirmed. Shares 452cc platform with Himalayan 450.",
+    desc:"The Guerrilla 450's naked street stance doesn't mean it won't tour. HMT brings proper cruise control to RE's most performance-oriented 450, making it equally capable on a long weekend ride as it is in the city."
+  },
+  "pulsar-ns400z": {
+    brand:"Bajaj", name:"Pulsar NS 400Z", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/pulsar-ns400z-hold-my-throttle",
+    img:"assets/images/aeb0ad_e5a3fbf7238a4485b1e769fe6eecb4d2~.png",
+    compat:"Bajaj Pulsar NS400Z (2024 onwards). All variants. First-ever cruise control solution for the NS400Z.",
+    desc:"The NS400Z redefined what a Pulsar could be. HMT adds what it was missing — highway cruise control calibrated to the KTM-derived engine's OBD protocol. World's first cruise control for the NS400Z."
+  },
+  "dominar-400": {
+    brand:"Bajaj", name:"Dominar 400 MY2025", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/dominar-400-my2025-hold-my-throttle",
+    img:"assets/images/aeb0ad_b3ab7aa6cfcf4a5cabbc0776ab345477~.png",
+    compat:"Bajaj Dominar 400 MY2025. Calibrated specifically for the updated 2025 OBD mapping. Earlier model years are not compatible.",
+    desc:"The Dominar 400 is built to eat distance. HMT makes it even more capable — precise cruise control tuned for the MY2025 OBD mapping, turning every highway into a genuinely restful ride."
+  },
+  "rs-457": {
+    brand:"Aprilia", name:"RS 457", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/rs-457-hold-my-throttle",
+    img:"assets/images/ea3263_4302e56eb104491ab8128ca52f0a63c0~.png",
+    compat:"Aprilia RS 457 (2023 onwards). All variants confirmed. Uses KTM-derived 457cc parallel twin platform.",
+    desc:"The RS 457's sporty ergonomics are thrilling on a circuit lap — but sustaining that crouch over highway hours is exhausting. HMT eliminates the throttle fatigue so the bike's character stays exciting, not tiring."
+  },
+  "vitpilen-401": {
+    brand:"Husqvarna", name:"Vitpilen 401", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/vitpilen-401-hmt",
+    img:"assets/images/ea3263_af1696c0230d4ac587baeafbcaf250d6~.png",
+    compat:"Husqvarna Vitpilen 401 (all variants). Calibrated for Husqvarna's OBD mapping — separate from the KTM Duke 390.",
+    desc:"The Vitpilen 401 is a Swedish cafe racer that surprises on the highway. HMT's cruise control shares the Duke 390's DNA but is calibrated separately for the Husqvarna OBD mapping, delivering a perfectly smooth speed hold."
+  },
+  "vitpilen-250": {
+    brand:"Husqvarna", name:"Vitpilen 250", price:"₹15,999", emi:"No Cost EMI from ₹5,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/vitpilen-250-hmt",
+    img:"assets/images/ea3263_99a14859fd2d4b6dacab37da33c80c5e~.png",
+    compat:"Husqvarna Vitpilen 250 (all variants). Tuned to the 250cc Duke-derived engine OBD profile.",
+    desc:"Light, sleek, and now cruise-equipped. The Vitpilen 250 with HMT turns commuter-length rides into relaxed mini-tours. Tuned to the 250cc Duke-derived engine for smooth, jerk-free cruise hold."
+  },
+  "vstrom-800de": {
+    brand:"Suzuki", name:"V-Strom 800DE", price:"₹18,999", emi:"No Cost EMI from ₹6,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/suzuki-v-storm-800de-hold-my-throttle",
+    img:"assets/images/ea3263_e4e3ae34b13348c1bf8f82bbb11a2427~.png",
+    compat:"Suzuki V-Strom 800DE (all variants). Calibrated for the 776cc V-twin OBD system.",
+    desc:"The V-Strom 800DE is a serious touring machine that deserves serious cruise control. HMT maps precisely to the 776cc V-twin OBD parameters — smooth, confident speed hold whether you're on the expressway or a mountain pass."
+  },
+  "transalp-750": {
+    brand:"Honda", name:"XL 750 Transalp", price:"₹18,999", emi:"No Cost EMI from ₹6,333/mo",
+    url:"https://www.holdmythrottle.com/product-page/honda-750-transalp-hold-my-throttle",
+    img:"assets/images/ea3263_6ea1b103cb784c7f95b68ccabcbaacc7~.png",
+    compat:"Honda XL 750 Transalp (2023 onwards). All variants confirmed. Mapped to the 755cc parallel twin OBD system.",
+    desc:"The Transalp 750 is Honda's return to adventure greatness. HMT adds the factory cruise control Honda inexplicably left out — mapped to the 755cc parallel twin's OBD system for the seamless integration the bike was always missing."
+  }
+};
+
+/* ═══════════════ PRODUCT MODAL LOGIC ═══════════════ */
+(function(){
+  const overlay   = document.getElementById('pd-overlay');
+  const modal     = document.getElementById('pd-modal');
+  const closeBtn  = document.getElementById('pd-close');
+  const resetBtn  = document.getElementById('pd-reset-btn');
+  const pdImg     = document.getElementById('pd-img');
+  const pdBrand   = document.getElementById('pd-brand');
+  const pdTitle   = document.getElementById('pd-title');
+  const pdPrice   = document.getElementById('pd-price');
+  const pdEmi     = document.getElementById('pd-emi');
+  const pdDesc    = document.getElementById('pd-desc');
+  const pdBuy     = document.getElementById('pd-buy');
+
+  const pdVideoWrap  = document.getElementById('pd-video-wrap');
+  const pdVideoFrame = document.getElementById('pd-video');
+  const pdVideoTitle = document.getElementById('pd-video-title');
+  const pdCompatBody = document.getElementById('pd-compat-body');
+
+  // Accordion toggle
+  function toggleAcc(btn){
+    const item = btn.closest('.pd-ac-item');
+    const isOpen = item.classList.contains('open');
+    // close all
+    modal.querySelectorAll('.pd-ac-item.open').forEach(i=>i.classList.remove('open'));
+    if(!isOpen) item.classList.add('open');
+  }
+  // Expose globally (called from inline onclick)
+  window.toggleAcc = toggleAcc;
+
+  function openModal(pk){
+    const d = BIKE_DATA[pk]; if(!d) return;
+    pdImg.src = d.img; pdImg.alt = d.brand+' '+d.name;
+    pdBrand.textContent = d.brand.toUpperCase();
+    pdTitle.textContent = d.name;
+    pdPrice.textContent = d.price;
+    pdEmi.textContent   = d.emi;
+    pdDesc.textContent  = d.desc;
+    pdBuy.href          = d.url;
+    // Compatibility accordion
+    if(pdCompatBody){
+      pdCompatBody.innerHTML = d.compat
+        ? '<p>'+d.compat+'</p>'
+        : '<p>Compatible with '+d.brand+' '+d.name+'. Plug &amp; play via OBD-II port.</p>';
+    }
+    // Close all accordions on open
+    modal.querySelectorAll('.pd-ac-item.open').forEach(i=>i.classList.remove('open'));
+    // Video
+    if(d.vid){
+      pdVideoFrame.src = 'https://www.youtube.com/embed/'+d.vid+'?rel=0';
+      pdVideoTitle.textContent = d.vidTitle || '';
+      pdVideoWrap.style.display = '';
+    } else {
+      pdVideoWrap.style.display = 'none';
+      pdVideoFrame.src = '';
+    }
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    modal.scrollTop = 0;
+  }
+
+  function closeModal(){
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+    pdVideoFrame.src = ''; // stop playback
+  }
+
+  // Bind bike cards
+  document.querySelectorAll('.bk[data-pk]').forEach(card=>{
+    card.addEventListener('click', ()=>{ location.hash = card.dataset.pk; });
+  });
+
+  closeBtn.addEventListener('click', closeModal);
+  resetBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+})();
+</script>
+</body>
+</html>
