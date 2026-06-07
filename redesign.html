@@ -385,7 +385,7 @@ nav{
 /* ─── PRODUCT EXPLODED VIEW ──────────────────── */
 #product{
   padding:120px 0;
-  background:var(--bg);
+  background:repeating-linear-gradient(to bottom,rgba(10,10,18,.07) 0 22px,transparent 22px 52px) 50% var(--road-ofs,0px)/2px 52px repeat-y,var(--bg);
   border-top:1px solid var(--b0);
 }
 .pr-outer{max-width:1140px;margin:0 auto;padding:0 28px}
@@ -689,7 +689,7 @@ nav{
 .rv-compat{position:absolute;pointer-events:none;opacity:0;width:0;height:0;overflow:hidden}
 
 /* ─── FEATURES ──────────────────────────────── */
-#features{padding:100px 0}
+#features{padding:100px 0;background:repeating-linear-gradient(to bottom,rgba(10,10,18,.07) 0 22px,transparent 22px 52px) 50% var(--road-ofs,0px)/2px 52px repeat-y,var(--bg)}
 .feat-wrap{max-width:1140px;margin:0 auto;padding:0 28px}
 .feat-intro{max-width:600px;margin-bottom:60px}
 .feat-intro h2{
@@ -715,7 +715,7 @@ nav{
 .fc p{font-size:14px;color:var(--t1);line-height:1.65}
 
 /* ─── HOW IT WORKS ──────────────────────────── */
-#howto{padding:100px 0;background:var(--s0);border-top:1px solid var(--b0)}
+#howto{padding:100px 0;background:repeating-linear-gradient(to bottom,rgba(10,10,18,.07) 0 22px,transparent 22px 52px) 50% var(--road-ofs,0px)/2px 52px repeat-y,var(--s0);border-top:1px solid var(--b0)}
 .hw-wrap{max-width:1140px;margin:0 auto;padding:0 28px}
 .hw-wrap h2{font-family:var(--f-d);font-size:clamp(52px,6vw,84px);line-height:.94;text-transform:uppercase;margin-bottom:60px}
 .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
@@ -760,7 +760,7 @@ nav{
 }
 
 /* ─── BIKES ──────────────────────────────────── */
-#bikes{padding:100px 0}
+#bikes{padding:100px 0;background:repeating-linear-gradient(to bottom,rgba(10,10,18,.07) 0 22px,transparent 22px 52px) 50% var(--road-ofs,0px)/2px 52px repeat-y,var(--bg)}
 .bk-wrap{max-width:1140px;margin:0 auto;padding:0 28px}
 .bk-wrap h2{font-family:var(--f-d);font-size:clamp(52px,6vw,84px);line-height:.94;text-transform:uppercase;margin-bottom:16px}
 .bk-sub{font-size:16px;color:var(--t1);max-width:520px;line-height:1.75;margin-bottom:36px}
@@ -1435,7 +1435,7 @@ nav{
 #page-hwy{
   position:fixed;inset:0;
   pointer-events:none;
-  z-index:2;
+  z-index:0;
   overflow:hidden;
   transition:opacity .6s ease;
 }
@@ -1456,23 +1456,6 @@ nav{
 .phwy-sl2{ left:calc(50% - min(660px,50vw)); opacity:.35 }
 .phwy-sr2{ right:calc(50% - min(660px,50vw)); opacity:.35 }
 
-/* Centre lane — animated dashes running downward */
-.phwy-spine{
-  position:absolute;top:0;bottom:0;
-  left:50%;transform:translateX(-50%);
-  width:2px;overflow:hidden;
-}
-#phwy-strip{
-  position:absolute;
-  top:-52px;left:0;right:0;
-  height:calc(100% + 104px);
-  background:repeating-linear-gradient(
-    to bottom,
-    rgba(10,10,18,.11) 0 22px,
-    transparent 22px 52px
-  );
-  will-change:transform;
-}
 
 /* Vanishing-point perspective lines radiating from top-center of hero */
 #phwy-vp-left,#phwy-vp-right{
@@ -1559,17 +1542,16 @@ nav{
   .phwy-sr { right:0 }
   .phwy-sl2,.phwy-sr2{ display:none }
   #phwy-vp-left,#phwy-vp-right{ display:none }
-  #phwy-strip { opacity:.5 }
   #phwy-glow  { opacity:.55 }
   .lane-divider{ height:46px !important }
   .lane-divider .lane-mark{ letter-spacing:.22em }
 }
 
 @media(prefers-reduced-motion:reduce){
-  #phwy-strip{ will-change:auto }
   .lane-divider::before{ animation:none }
   .lane-divider .lane-mark::before,
   .lane-divider .lane-mark::after{ animation:none }
+  #product,#features,#howto,#bikes{--road-ofs:0px !important}
 }
 
 /* ─── MOBILE ──────────────────────────────────────── */
@@ -1620,7 +1602,6 @@ nav{
   <div id="phwy-vp-left"></div>
   <div id="phwy-vp-right"></div>
   <div id="phwy-glow"></div>
-  <div class="phwy-spine"><div id="phwy-strip"></div></div>
 </div>
 
 <div id="main-wrap">
@@ -3426,6 +3407,56 @@ const BIKE_DATA = {
   window.addEventListener('hashchange', handleRoute);
   handleRoute(); // run on initial load
 })();
+
+/* ══ Highway spine — scroll-velocity animation ══ */
+(function(){
+  var glow  = document.getElementById('phwy-glow');
+  var hwyEl = document.getElementById('page-hwy');
+  var root  = document.documentElement;
+  var offset = 0, speed = 0.4, lastSY = window.scrollY;
+  var PERIOD = 52;
+
+  function updateGlow(){
+    if(!glow) return;
+    var hero  = document.getElementById('hero');
+    var heroH = hero ? hero.offsetHeight : window.innerHeight;
+    var t = Math.max(0, Math.min(1, window.scrollY / (heroH * 0.6)));
+    glow.style.opacity = (1 - t).toFixed(3);
+  }
+
+  var darkIds = ['challenge','cta','footer-main'];
+  function updateShoulders(){
+    if(!hwyEl) return;
+    var dark = darkIds.some(function(id){
+      var el = document.getElementById(id);
+      if(!el) return false;
+      var r = el.getBoundingClientRect();
+      return r.top < window.innerHeight * 0.5 && r.bottom > window.innerHeight * 0.5;
+    });
+    hwyEl.style.opacity = dark ? '0.28' : '1';
+  }
+
+  window.addEventListener('scroll', function(){
+    var sy    = window.scrollY;
+    var delta = Math.abs(sy - lastSY);
+    lastSY = sy;
+    speed  = Math.min(speed + delta * 0.18, 9);
+    updateGlow();
+    updateShoulders();
+  }, {passive:true});
+
+  function tick(){
+    speed  += (0.4 - speed) * 0.055;
+    offset  = (offset + speed) % PERIOD;
+    root.style.setProperty('--road-ofs', offset.toFixed(2) + 'px');
+    requestAnimationFrame(tick);
+  }
+
+  updateGlow();
+  updateShoulders();
+  tick();
+})();
+
 </script>
 </body>
 </html>
