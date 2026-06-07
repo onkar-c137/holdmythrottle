@@ -1299,7 +1299,6 @@ nav{
   background:repeating-linear-gradient(90deg,var(--b1) 0 34px,transparent 34px 64px);
   -webkit-mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
           mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
-  /* animation removed — static dashes only */
 }
 .lane-divider .lane-mark{
   position:relative;z-index:1;
@@ -1660,6 +1659,174 @@ nav{
   .pd-video-wrap{border-radius:8px}
 }
 
+
+/* ═══════════════════════════════════════════════════
+   PERSISTENT HIGHWAY SPINE
+   z-index:2 sits above sections (z-index:1) but below
+   nav (300) and modal overlays (900+).
+   Very low opacity — felt, not stared at.
+   JS drives translateY for scroll-velocity effect.
+═══════════════════════════════════════════════════ */
+#page-hwy{
+  position:fixed;inset:0;
+  pointer-events:none;
+  z-index:2;
+  overflow:hidden;
+  transition:opacity .6s ease;
+}
+
+/* Shoulder / edge lines at content column boundary */
+.phwy-shoulder{
+  position:absolute;top:0;bottom:0;width:1px;
+  background:linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(10,10,18,.055) 5%,
+    rgba(10,10,18,.055) 95%,
+    transparent 100%
+  );
+}
+.phwy-sl { left:calc(50% - min(598px,47vw)) }
+.phwy-sr { right:calc(50% - min(598px,47vw)) }
+.phwy-sl2{ left:calc(50% - min(660px,50vw)); opacity:.35 }
+.phwy-sr2{ right:calc(50% - min(660px,50vw)); opacity:.35 }
+
+/* Centre lane — animated dashes running downward */
+.phwy-spine{
+  position:absolute;top:0;bottom:0;
+  left:50%;transform:translateX(-50%);
+  width:2px;overflow:hidden;
+}
+#phwy-strip{
+  position:absolute;
+  top:-52px;left:0;right:0;
+  height:calc(100% + 104px);
+  background:repeating-linear-gradient(
+    to bottom,
+    rgba(10,10,18,.11) 0 22px,
+    transparent 22px 52px
+  );
+  will-change:transform;
+}
+
+/* Vanishing-point perspective lines radiating from top-center of hero */
+#phwy-vp-left,#phwy-vp-right{
+  position:absolute;
+  top:56px; /* below nav */
+  width:1px;height:55vh;
+  background:linear-gradient(to bottom,
+    rgba(255,68,0,.1) 0%,
+    rgba(10,10,18,.04) 55%,
+    transparent 100%
+  );
+  pointer-events:none;
+}
+#phwy-vp-left { left:50%; transform-origin:top left; transform:rotate(14deg) }
+#phwy-vp-right{ right:50%; transform-origin:top right; transform:rotate(-14deg) }
+
+/* Orange horizon glow — fades as hero scrolls away */
+#phwy-glow{
+  position:absolute;
+  left:50%;transform:translateX(-50%);
+  top:calc(48vh - 40px);
+  width:min(720px,82vw);height:90px;
+  background:radial-gradient(ellipse,rgba(255,68,0,.15) 0%,transparent 66%);
+  filter:blur(22px);
+}
+
+/* ── Enhanced lane dividers ────────────────────── */
+.lane-divider{
+  position:relative;height:52px !important;
+  overflow:hidden;background:var(--bg);
+  border-top:1px solid var(--b0);
+  border-bottom:1px solid var(--b0);
+  display:flex;align-items:center;justify-content:center;
+}
+.lane-divider::before{
+  content:'';position:absolute;left:0;right:0;top:50%;height:3px;
+  transform:translateY(-50%);
+  background:repeating-linear-gradient(90deg,var(--b1) 0 32px,transparent 32px 60px);
+  -webkit-mask:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
+          mask:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
+  animation:laneRun .7s linear infinite;
+}
+.lane-divider::after{
+  content:'';position:absolute;top:50%;left:0;right:0;height:1px;
+  transform:translateY(-50%);
+  background:linear-gradient(90deg,transparent 0,var(--orange) 2px,
+    transparent 3px,transparent calc(100% - 3px),
+    var(--orange) calc(100% - 2px),transparent 100%);
+  opacity:.15;
+}
+.lane-divider .lane-mark{
+  position:relative;z-index:1;
+  font-family:var(--f-m);font-size:9px;letter-spacing:.38em;
+  color:var(--orange);text-transform:uppercase;
+  background:var(--bg);padding:0 20px;
+  display:inline-flex;align-items:center;gap:12px;
+}
+.lane-divider .lane-mark::before,
+.lane-divider .lane-mark::after{
+  content:'›';color:var(--orange);font-size:14px;
+  animation:laneArrow 1.2s ease-in-out infinite;
+}
+.lane-divider .lane-mark::after{animation-delay:.42s}
+@keyframes laneArrow{
+  0%,100%{opacity:.22;transform:translateX(0)}
+  50%   {opacity:.75;transform:translateX(5px)}
+}
+
+/* ── Section-top orange road-horizon stripe ─────── */
+.road-enter{
+  display:block;height:2px;
+  background:linear-gradient(90deg,
+    transparent 0%,
+    rgba(255,68,0,.1) 18%,
+    rgba(255,68,0,.25) 50%,
+    rgba(255,68,0,.1) 82%,
+    transparent 100%
+  );
+}
+
+/* ─── MOBILE ─────────────────────────────────────── */
+@media(max-width:768px){
+  .phwy-sl { left:0 }
+  .phwy-sr { right:0 }
+  .phwy-sl2,.phwy-sr2{ display:none }
+  #phwy-vp-left,#phwy-vp-right{ display:none }
+  #phwy-strip { opacity:.5 }
+  #phwy-glow  { opacity:.55 }
+  .lane-divider{ height:46px !important }
+  .lane-divider .lane-mark{ letter-spacing:.22em }
+}
+
+@media(prefers-reduced-motion:reduce){
+  #phwy-strip{ will-change:auto }
+  .lane-divider::before{ animation:none }
+  .lane-divider .lane-mark::before,
+  .lane-divider .lane-mark::after{ animation:none }
+}
+
+/* ─── MOBILE ──────────────────────────────────────── */
+@media(max-width:768px){
+  /* Shoulder lines to screen edges on mobile */
+  .phwy-sl{ left:0 }
+  .phwy-sr{ right:0 }
+  .phwy-sl2,.phwy-sr2{ display:none }
+  #phwy-vp-left,#phwy-vp-right{ display:none }
+  #phwy-strip{ opacity:.55 }
+  #phwy-glow{ opacity:.6 }
+  .lane-divider{ height:44px !important }
+}
+
+/* Respect reduced motion */
+@media(prefers-reduced-motion:reduce){
+  #phwy-strip{ animation:none !important }
+  .lane-divider::before{ animation:none }
+  .lane-divider .lane-mark::before,
+  .lane-divider .lane-mark::after{ animation:none }
+}
+
 </style>
 </head>
 <body>
@@ -1679,6 +1846,17 @@ nav{
   </div>
 </nav>
 
+<!-- ════ PERSISTENT HIGHWAY SPINE ════ -->
+<div id="page-hwy" aria-hidden="true">
+  <div class="phwy-shoulder phwy-sl"></div>
+  <div class="phwy-shoulder phwy-sr"></div>
+  <div class="phwy-shoulder phwy-sl2"></div>
+  <div class="phwy-shoulder phwy-sr2"></div>
+  <div id="phwy-vp-left"></div>
+  <div id="phwy-vp-right"></div>
+  <div id="phwy-glow"></div>
+  <div class="phwy-spine"><div id="phwy-strip"></div></div>
+</div>
 
 <div id="main-wrap">
 <!-- Floating CTA -->
@@ -2144,6 +2322,7 @@ nav{
 
 <!-- ════════ FEATURES ════════ -->
 <section id="features">
+<span class="road-enter" aria-hidden="true"></span>
   <div class="feat-wrap">
     <div class="feat-inner">
 
@@ -2171,6 +2350,7 @@ nav{
 
 <!-- ════════ HOW IT WORKS ════════ -->
 <section id="howto">
+<span class="road-enter" aria-hidden="true"></span>
   <div class="hw-wrap">
     <div data-ap="up">
       <span class="ap-intro-label">03 — Installation</span>
@@ -2190,6 +2370,7 @@ nav{
 
 <!-- ════════ BIKES ════════ -->
 <section id="bikes">
+<span class="road-enter" aria-hidden="true"></span>
   <div class="bk-wrap">
     <div data-ap="up">
       <span class="ap-intro-label">04 — Compatible Bikes</span>
